@@ -1,0 +1,45 @@
+[project]
+name = "music-downloader-bot"
+version = "0.1.0"
+description = "Discord Botを通じてQobuz、YouTube、Spotifyから音楽をダウンロードしてNavidromeで配信可能にするツール"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "MusicDownloaderBot", email = "example@example.com" }
+]
+
+dependencies = [
+    "discord.py>=2.6.4",
+    "python-dotenv>=1.2.1",
+    "yt-dlp>=2026.1.29",
+    "spotdl>=4.4.3",
+    "mutagen>=1.47.0",
+    "requests>=2.32.5",
+    "qobuz-dl>=0.9.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+]
+
+[project.scripts]
+music-downloader-bot = "main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["bot.py", "config.py", "main.py", "queue_manager.py", "url_parser.py", "downloaders"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
