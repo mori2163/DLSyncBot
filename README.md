@@ -12,6 +12,7 @@ Discord Botを通じて **Qobuz**、**YouTube**、**Spotify** から音楽をダ
 -  **Navidrome連携**: ダウンロード後、自動的にライブラリフォルダに配置
 -  **堅牢なエラー処理**: Qobuzダウンロード失敗時は自動リトライ
 -  **進捗通知**: Discord上でダウンロード状況をリアルタイム通知
+-  **ダウンロードリンク**: 完了後にファイルをダウンロード可能（10MB以下は直接添付、10MB以上は一時リンク）
 
 ## 主な特徴
 
@@ -174,6 +175,8 @@ MusicDownloaderBot/
 ├── url_parser.py        # URL判別ロジック
 ├── queue_manager.py     # ダウンロードキュー管理
 ├── metadata_fetcher.py  # メタデータ取得・加工ロジック
+├── archive_utils.py     # zipアーカイブユーティリティ
+├── file_server.py       # ファイル配信サーバー（ダウンロードリンク用）
 ├── downloaders/
 │   ├── __init__.py
 │   ├── base.py          # ダウンローダー基底クラス
@@ -198,7 +201,43 @@ MusicDownloaderBot/
    - **Spotify**: Opus形式（SpotifyはYouTubeからの音源取得を利用）
 5. **メタデータ処理**: ジャケット画像やID3タグを自動埋め込み
 6. **ライブラリ配置**: Navidromeの監視フォルダに自動移動
-7. **通知**: 完了/失敗をDiscordに通知
+7. **ダウンロード提供**: 
+   - 10MB以下: Discord添付ファイルとして直接送信
+   - 10MB以上: 一時ダウンロードリンクを生成（回数・期限制限付き）
+8. **通知**: 完了/失敗をDiscordに通知
+
+## ダウンロードリンク機能
+
+ダウンロード完了後、ファイルを取得できる機能を提供します。
+
+### 動作モード
+
+| ファイルサイズ | 動作 |
+|--------------|------|
+| 10MB未満 | Discordに直接zipファイルを添付 |
+| 10MB以上 | 一時ダウンロードリンクを生成 |
+
+### 一時リンクの制限
+
+- **ダウンロード回数**: 最大3回（設定変更可能）
+- **有効期限**: 24時間（設定変更可能）
+- リンク期限切れまたは回数上限に達すると自動削除
+
+### Cloudflare Tunnel の設定（10MB以上のファイル用）
+
+10MB以上のファイルをダウンロードリンクで提供するには、ファイルサーバーを外部公開する必要があります。
+
+```bash
+# Cloudflare Tunnel のインストール（例: Windows）
+winget install cloudflare.cloudflared
+
+# トンネルの起動（一時URL）
+cloudflared tunnel --url http://localhost:8080
+
+# 表示されるURLを FILE_SERVER_BASE_URL に設定
+```
+
+永続的なトンネルを設定する場合は [Cloudflare Tunnel ドキュメント](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) を参照してください。
 
 ## 設定項目の詳細
 
@@ -211,6 +250,11 @@ MusicDownloaderBot/
 | `LIBRARY_PATH` | `./library` | 最終配置先（Navidromeライブラリ） |
 | `MAX_RETRIES` | `3` | Qobuzダウンロードの最大リトライ回数 |
 | `QUEUE_MAX_SIZE` | `100` | キュー内の最大タスク数 |
+| `FILE_SERVER_PORT` | `8080` | ファイル配信サーバーのポート |
+| `FILE_SERVER_BASE_URL` | - | 外部公開URL（Cloudflare Tunnel等） |
+| `DOWNLOAD_SIZE_THRESHOLD` | `10485760` | リンク生成の閾値（バイト、デフォルト10MB） |
+| `DOWNLOAD_LINK_MAX_COUNT` | `3` | ダウンロードリンクの最大回数 |
+| `DOWNLOAD_LINK_EXPIRE_HOURS` | `24` | ダウンロードリンクの有効期限（時間） |
 
 ## トラブルシューティング
 

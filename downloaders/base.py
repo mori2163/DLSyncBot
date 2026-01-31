@@ -25,6 +25,8 @@ class DownloadResult:
     folder_path: Optional[Path] = None
     file_count: int = 0
     error: Optional[str] = None
+    zip_path: Optional[Path] = None
+    zip_size: int = 0
 
 
 class BaseDownloader(ABC):

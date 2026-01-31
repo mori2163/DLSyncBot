@@ -8,12 +8,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from config import Config
 from queue_manager import QueueManager, DownloadTask, TaskStatus
 from url_parser import URLParser, ServiceType
 from metadata_fetcher import MetadataFetcher, MediaMetadata
+from archive_utils import create_zip_archive, format_file_size
+from file_server import get_file_server
 
 
 # サービス別の絵文字とカラー
@@ -145,6 +148,23 @@ class DownloadConfirmView(discord.ui.View):
                 pass
 
 
+class DownloadLinkView(discord.ui.View):
+    """ダウンロードリンクボタンを含むView"""
+    
+    def __init__(self, download_url: str):
+        super().__init__(timeout=None)  # タイムアウトなし
+        
+        # URLボタンを追加（外部リンク）
+        self.add_item(
+            discord.ui.Button(
+                label="ダウンロード",
+                style=discord.ButtonStyle.link,
+                url=download_url,
+                emoji="⬇️",
+            )
+        )
+
+
 class MusicDownloaderBot(commands.Bot):
     """音楽ダウンロードBot"""
     
@@ -235,6 +255,7 @@ class MusicDownloaderBot(commands.Bot):
             )
             
             # アルバム/フォルダ名を表示
+            folder_name = None
             if task.result and task.result.folder_path:
                 # 接頭辞を除去して表示
                 folder_name = task.result.folder_path.name
@@ -262,7 +283,80 @@ class MusicDownloaderBot(commands.Bot):
                 )
             
             embed.set_footer(text=f"タスクID: {task.id[:8]}")
-            await channel.send(content=user_mention, embed=embed)
+            
+            # ダウンロードファイルの準備
+            file_attachment = None
+            download_view = None
+            
+            if task.result and task.result.folder_path and task.result.folder_path.exists():
+                # zipアーカイブを作成
+                zip_path, zip_size = await create_zip_archive(task.result.folder_path)
+                
+                if zip_path and zip_size > 0:
+                    size_str = format_file_size(zip_size)
+                    
+                    if zip_size < Config.DOWNLOAD_SIZE_THRESHOLD:
+                        # 10MB以下: Discordに直接添付
+                        try:
+                            file_attachment = discord.File(
+                                zip_path,
+                                filename=f"{folder_name or 'download'}.zip",
+                            )
+                            embed.add_field(
+                                name="📦 ダウンロード",
+                                value=f"ファイルサイズ: {size_str}",
+                                inline=False,
+                            )
+                        except Exception as e:
+                            embed.add_field(
+                                name="⚠️ 添付エラー",
+                                value=f"ファイルの添付に失敗しました: {e}",
+                                inline=False,
+                            )
+                        finally:
+                            # 添付後にzipファイルを削除
+                            if zip_path.exists():
+                                zip_path.unlink()
+                    else:
+                        # 10MB以上: ダウンロードリンクを生成
+                        file_server = get_file_server()
+                        if Config.FILE_SERVER_BASE_URL:
+                            download_url, token = file_server.create_download_link(
+                                file_path=zip_path,
+                                file_name=f"{folder_name or 'download'}.zip",
+                            )
+                            
+                            embed.add_field(
+                                name="📦 ダウンロード",
+                                value=(
+                                    f"ファイルサイズ: {size_str}\n"
+                                    f"残り回数: **{token.remaining_downloads}回**\n"
+                                    f"有効期限: {Config.DOWNLOAD_LINK_EXPIRE_HOURS}時間"
+                                ),
+                                inline=False,
+                            )
+                            
+                            # ダウンロードボタン付きView
+                            download_view = DownloadLinkView(download_url)
+                        else:
+                            embed.add_field(
+                                name="⚠️ ダウンロードリンク",
+                                value=(
+                                    f"ファイルサイズ: {size_str}\n"
+                                    "サーバー設定がないためリンクを生成できません"
+                                ),
+                                inline=False,
+                            )
+                            # zipファイルを削除
+                            if zip_path.exists():
+                                zip_path.unlink()
+            
+            await channel.send(
+                content=user_mention,
+                embed=embed,
+                file=file_attachment,
+                view=download_view,
+            )
         
         elif task.status == TaskStatus.FAILED:
             # プレビューメッセージを更新

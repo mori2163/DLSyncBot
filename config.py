@@ -43,6 +43,13 @@ class Config:
     YOUTUBE_PREFIX: str = "[YT] "
     SPOTIFY_PREFIX: str = "[SP] "
     
+    # ファイル配信サーバー設定
+    FILE_SERVER_PORT: int = int(os.getenv("FILE_SERVER_PORT", "8080"))
+    FILE_SERVER_BASE_URL: str = os.getenv("FILE_SERVER_BASE_URL", "")
+    DOWNLOAD_SIZE_THRESHOLD: int = int(os.getenv("DOWNLOAD_SIZE_THRESHOLD", "10485760"))  # 10MB
+    DOWNLOAD_LINK_MAX_COUNT: int = int(os.getenv("DOWNLOAD_LINK_MAX_COUNT", "3"))
+    DOWNLOAD_LINK_EXPIRE_HOURS: int = int(os.getenv("DOWNLOAD_LINK_EXPIRE_HOURS", "24"))
+    
     @classmethod
     def validate(cls) -> list[str]:
         """設定の検証を行い、エラーメッセージのリストを返す"""

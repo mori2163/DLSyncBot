@@ -5,3 +5,4 @@ spotdl
 mutagen
 requests
 qobuz-dl
+aiohttp
