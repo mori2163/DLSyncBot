@@ -1,4 +1,4 @@
-# MusicDownloaderBot
+# DLSyncBot
 
 Discord Botを通じて **Qobuz**、**YouTube**、**Spotify** から音楽をダウンロードし、メタデータとジャケット画像を付与した上で、**Navidrome** で配信可能な状態にする多機能ダウンロードBot。
 
