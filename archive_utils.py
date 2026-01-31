@@ -56,8 +56,7 @@ async def create_zip_archive(
             return None, 0
     
     # ブロッキング処理を別スレッドで実行
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _create_zip)
+    return await asyncio.to_thread(_create_zip)
 
 
 def get_folder_size(folder: Path) -> int:

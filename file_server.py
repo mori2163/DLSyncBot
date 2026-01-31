@@ -164,16 +164,18 @@ class FileServer:
             asyncio.create_task(self._delayed_cleanup(token_id, delay=60))
 
         # 非ASCII文字を含むファイル名に対応 (RFC 5987)
-        # 従来の引数用 (ASCIIのみに制限)
+        # 従来の引数用 (ASCIIのみに制限し、クォートとバックスラッシュをエスケープ)
         ascii_filename = token.file_name.encode("ascii", "ignore").decode("ascii") or "file"
+        ascii_filename = ascii_filename.replace("\\", "\\\\").replace('"', '\\"')
+        
         # RFC 5987 準拠の引数用 (UTF-8)
-        encoded_filename = urllib.parse.quote(token.file_name)
+        encoded_filename = urllib.parse.quote(token.file_name, safe='')
         
         # ファイルを返す
         return web.FileResponse(
             path=token.file_path,
             headers={
-                "Content-Disposition": f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{encoded_filename}\'',
+                "Content-Disposition": f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{encoded_filename}',
                 "X-Downloads-Remaining": str(remaining),
             },
         )

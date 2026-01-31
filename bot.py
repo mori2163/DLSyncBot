@@ -297,6 +297,9 @@ class MusicDownloaderBot(commands.Bot):
                     if zip_path and zip_size > 0:
                         size_str = format_file_size(zip_size)
                         
+                        # 一旦クリーンアップ対象にする
+                        zip_to_cleanup = zip_path
+                        
                         if zip_size < Config.DOWNLOAD_SIZE_THRESHOLD:
                             # 10MB以下: Discordに直接添付
                             try:
@@ -304,7 +307,6 @@ class MusicDownloaderBot(commands.Bot):
                                     zip_path,
                                     filename=f"{folder_name or 'download'}.zip",
                                 )
-                                zip_to_cleanup = zip_path  # 送信後に削除するようにマーク
                                 embed.add_field(
                                     name="📦 ダウンロード",
                                     value=f"ファイルサイズ: {size_str}",
@@ -318,36 +320,44 @@ class MusicDownloaderBot(commands.Bot):
                                 )
                         else:
                             # 10MB以上: ダウンロードリンクを生成
-                            file_server = get_file_server()
-                            if Config.FILE_SERVER_BASE_URL:
-                                download_url, token = file_server.create_download_link(
-                                    file_path=zip_path,
-                                    file_name=f"{folder_name or 'download'}.zip",
-                                )
-                                
+                            try:
+                                file_server = get_file_server()
+                                if Config.FILE_SERVER_BASE_URL:
+                                    download_url, token = file_server.create_download_link(
+                                        file_path=zip_path,
+                                        file_name=f"{folder_name or 'download'}.zip",
+                                    )
+                                    
+                                    # ファイルサーバーに正常に登録された場合は、今すぐ削除しない
+                                    zip_to_cleanup = None
+                                    
+                                    embed.add_field(
+                                        name="📦 ダウンロード",
+                                        value=(
+                                            f"ファイルサイズ: {size_str}\n"
+                                            f"残り回数: **{token.remaining_downloads}回**\n"
+                                            f"有効期限: {Config.DOWNLOAD_LINK_EXPIRE_HOURS}時間"
+                                        ),
+                                        inline=False,
+                                    )
+                                    
+                                    # ダウンロードボタン付きView
+                                    download_view = DownloadLinkView(download_url)
+                                else:
+                                    embed.add_field(
+                                        name="⚠️ ダウンロードリンク",
+                                        value=(
+                                            f"ファイルサイズ: {size_str}\n"
+                                            "サーバー設定がないためリンクを生成できません"
+                                        ),
+                                        inline=False,
+                                    )
+                            except Exception as e:
                                 embed.add_field(
-                                    name="📦 ダウンロード",
-                                    value=(
-                                        f"ファイルサイズ: {size_str}\n"
-                                        f"残り回数: **{token.remaining_downloads}回**\n"
-                                        f"有効期限: {Config.DOWNLOAD_LINK_EXPIRE_HOURS}時間"
-                                    ),
+                                    name="⚠️ リンク生成エラー",
+                                    value=f"ダウンロードリンクの生成に失敗しました: {e}",
                                     inline=False,
                                 )
-                                
-                                # ダウンロードボタン付きView
-                                download_view = DownloadLinkView(download_url)
-                            else:
-                                embed.add_field(
-                                    name="⚠️ ダウンロードリンク",
-                                    value=(
-                                        f"ファイルサイズ: {size_str}\n"
-                                        "サーバー設定がないためリンクを生成できません"
-                                    ),
-                                    inline=False,
-                                )
-                                # zipファイルを削除するようにマーク
-                                zip_to_cleanup = zip_path
                 
                 # メッセージを送信
                 send_kwargs = {
@@ -361,8 +371,19 @@ class MusicDownloaderBot(commands.Bot):
                 
                 await channel.send(**send_kwargs)
             except Exception as e:
-                # 送信エラー時の処理
+                # 送信エラー時の処理。ログに残しつつ、フォールバック通知を試みる
                 print(f"通知送信エラー: {e}")
+                try:
+                    # 簡潔なメッセージで再試行
+                    await channel.send(f"{user_mention} 通知の送信に失敗しましたが、ダウンロードは完了しています。")
+                except Exception:
+                    # チャンネル送信が壊滅的な場合はDMを試みる
+                    try:
+                        user = self.get_user(task.requester_id) or await self.fetch_user(task.requester_id)
+                        if user:
+                            await user.send(f"通知の送信に失敗しましたが、ダウンロードは完了しました。タスクID: {task.id[:8]}")
+                    except Exception as dm_e:
+                        print(f"DM送信失敗: {dm_e}")
             finally:
                 # 添付ファイルを閉じて一時ファイルを削除
                 if file_attachment:
