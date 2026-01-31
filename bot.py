@@ -207,7 +207,13 @@ class MusicDownloaderBot(commands.Bot):
             return
         
         channel = self.get_channel(task.channel_id)
-        if not channel or not isinstance(channel, discord.TextChannel):
+        if not channel:
+            try:
+                channel = await self.fetch_channel(task.channel_id)
+            except (discord.NotFound, discord.Forbidden):
+                print(f"チャンネル取得失敗: {task.channel_id}")
+                return
+        if not isinstance(channel, discord.TextChannel):
             return
         
         try:
@@ -224,7 +230,13 @@ class MusicDownloaderBot(commands.Bot):
     async def _on_task_progress(self, task: DownloadTask) -> None:
         """タスク進捗通知"""
         channel = self.get_channel(task.channel_id)
-        if not channel or not isinstance(channel, discord.TextChannel):
+        if not channel:
+            try:
+                channel = await self.fetch_channel(task.channel_id)
+            except (discord.NotFound, discord.Forbidden):
+                print(f"チャンネル取得失敗: {task.channel_id}")
+                return
+        if not isinstance(channel, discord.TextChannel):
             return
         
         user_mention = f"<@{task.requester_id}>"
@@ -291,8 +303,12 @@ class MusicDownloaderBot(commands.Bot):
             
             try:
                 if task.result and task.result.folder_path and task.result.folder_path.exists():
-                    # zipアーカイブを作成
-                    zip_path, zip_size = await create_zip_archive(task.result.folder_path)
+                    # zipアーカイブを作成（ライブラリではなく一時フォルダに出力）
+                    zip_output_path = Config.DOWNLOAD_PATH / f"{task.result.folder_path.name}.zip"
+                    zip_path, zip_size = await create_zip_archive(
+                        task.result.folder_path,
+                        output_path=zip_output_path,
+                    )
                     
                     if zip_path and zip_size > 0:
                         size_str = format_file_size(zip_size)
@@ -372,7 +388,9 @@ class MusicDownloaderBot(commands.Bot):
                 await channel.send(**send_kwargs)
             except Exception as e:
                 # 送信エラー時の処理。ログに残しつつ、フォールバック通知を試みる
+                import traceback
                 print(f"通知送信エラー: {e}")
+                traceback.print_exc()
                 try:
                     # 簡潔なメッセージで再試行
                     await channel.send(f"{user_mention} 通知の送信に失敗しましたが、ダウンロードは完了しています。")
