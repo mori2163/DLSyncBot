@@ -5,6 +5,7 @@
 
 import os
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,12 +25,18 @@ class Config:
     DOWNLOAD_PATH: Path = Path(os.getenv("DOWNLOAD_PATH", "./downloads"))
     LIBRARY_PATH: Path = Path(os.getenv("LIBRARY_PATH", "./library"))
     
+    # 外部ツールパス
+    FFMPEG_PATH: Optional[str] = os.getenv("FFMPEG_PATH")
+    
     # ダウンロード設定
     MAX_RETRIES: int = int(os.getenv("MAX_RETRIES", "3"))
     QUEUE_MAX_SIZE: int = int(os.getenv("QUEUE_MAX_SIZE", "100"))
     
-    # 音声形式設定
+    # YouTube設定
     YOUTUBE_FORMAT: str = "opus"  # opus固定
+    YOUTUBE_PO_TOKEN: Optional[str] = os.getenv("YOUTUBE_PO_TOKEN")
+    
+    # 音声形式設定
     SPOTIFY_FORMAT: str = "opus"  # opus固定
     
     # フォルダ接頭辞

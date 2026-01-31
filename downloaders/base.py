@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import os
 import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from command_utils import resolve_command
+from config import Config
 
 
 @dataclass
@@ -79,11 +81,22 @@ class BaseDownloader(ABC):
         if error:
             return -1, "", error
 
+        # 実行時環境変数の構築
+        env = os.environ.copy()
+        if Config.FFMPEG_PATH:
+            ffmpeg_path = Path(Config.FFMPEG_PATH)
+            # ディレクトリパスの場合はそのまま、実行ファイルパスの場合は親ディレクトリをPATHに追加
+            ffmpeg_dir = str(ffmpeg_path.parent) if ffmpeg_path.is_file() else str(ffmpeg_path)
+            
+            path_sep = ";" if os.name == "nt" else ":"
+            env["PATH"] = f"{ffmpeg_dir}{path_sep}{env.get('PATH', '')}"
+
         process = await asyncio.create_subprocess_exec(
             *resolved_cmd,
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
         try:
             stdout, stderr = await asyncio.wait_for(

@@ -35,10 +35,18 @@ class YouTubeDownloader(BaseDownloader):
             self.download_path / "%(playlist_title,channel)s - %(title)s" / "%(title)s.%(ext)s"
         )
         
+        # クライアント設定とPO Tokenの設定
+        client_arg = "ios,web"
+        extractor_args = [f"youtube:player_client={client_arg}"]
+        
+        if Config.YOUTUBE_PO_TOKEN:
+            # iosクライアント用のTokenとして設定（必要に応じてweb用なども検討）
+            extractor_args.append(f"youtube:po_token=ios.gvs+{Config.YOUTUBE_PO_TOKEN}")
+        
         cmd = [
             "yt-dlp",
             "--js-runtimes", "node",
-            "--extractor-args", "youtube:player_client=android,web",
+            "--extractor-args", "; ".join(extractor_args),
             "--extract-audio",
             "--audio-format", "opus",
             "--audio-quality", "0",  # 最高品質
@@ -46,8 +54,13 @@ class YouTubeDownloader(BaseDownloader):
             "--embed-metadata",
             "--output", output_template,
             "--no-playlist" if "list=" not in url else "--yes-playlist",
-            url,
         ]
+        
+        # ffmpegのパスが設定されている場合は追加
+        if Config.FFMPEG_PATH:
+            cmd.extend(["--ffmpeg-location", Config.FFMPEG_PATH])
+        
+        cmd.append(url)
         
         returncode, stdout, stderr = await self.run_command(cmd)
         
@@ -90,17 +103,26 @@ class YouTubeDownloader(BaseDownloader):
         
         try:
             # yt-dlpでサムネイルのみを取得
+            client_arg = "ios,web"
+            extractor_args = [f"youtube:player_client={client_arg}"]
+            if Config.YOUTUBE_PO_TOKEN:
+                extractor_args.append(f"youtube:po_token=ios.gvs+{Config.YOUTUBE_PO_TOKEN}")
+
             cmd = [
                 "yt-dlp",
                 "--js-runtimes", "node",
-                "--extractor-args", "youtube:player_client=android,web",
+                "--extractor-args", "; ".join(extractor_args),
                 "--skip-download",
                 "--write-thumbnail",
                 "--convert-thumbnails", "jpg",
                 "--output", str(folder / "cover"),
                 "--no-playlist",
-                url,
             ]
+
+            if Config.FFMPEG_PATH:
+                cmd.extend(["--ffmpeg-location", Config.FFMPEG_PATH])
+            
+            cmd.append(url)
             
             returncode, stdout, stderr = await self.run_command(cmd)
             
