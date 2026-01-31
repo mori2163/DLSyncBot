@@ -25,11 +25,8 @@ class URLParser:
             r"https?://open\.qobuz\.com/",
         ],
         ServiceType.YOUTUBE: [
-            r"https?://(?:www\.)?youtube\.com/watch\?v=",
-            r"https?://(?:www\.)?youtube\.com/playlist\?list=",
+            r"https?://(?:[^/]+\.)?youtube\.com/",
             r"https?://youtu\.be/",
-            r"https?://(?:www\.)?youtube\.com/shorts/",
-            r"https?://music\.youtube\.com/",
         ],
         ServiceType.SPOTIFY: [
             r"https?://open\.spotify\.com/",
