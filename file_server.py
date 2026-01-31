@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -125,7 +126,7 @@ class FileServer:
             return True
         return False
     
-    async def _handle_download(self, request: web.Request) -> web.Response:
+    async def _handle_download(self, request: web.Request) -> web.StreamResponse:
         """ダウンロードリクエストを処理"""
         token_id = request.match_info.get("token")
         
@@ -161,12 +162,18 @@ class FileServer:
         # 最後のダウンロードの場合、後でクリーンアップ
         if remaining == 0:
             asyncio.create_task(self._delayed_cleanup(token_id, delay=60))
+
+        # 非ASCII文字を含むファイル名に対応 (RFC 5987)
+        # 従来の引数用 (ASCIIのみに制限)
+        ascii_filename = token.file_name.encode("ascii", "ignore").decode("ascii") or "file"
+        # RFC 5987 準拠の引数用 (UTF-8)
+        encoded_filename = urllib.parse.quote(token.file_name)
         
         # ファイルを返す
         return web.FileResponse(
             path=token.file_path,
             headers={
-                "Content-Disposition": f'attachment; filename="{token.file_name}"',
+                "Content-Disposition": f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{encoded_filename}\'',
                 "X-Downloads-Remaining": str(remaining),
             },
         )

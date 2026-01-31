@@ -31,12 +31,19 @@ async def start_bot() -> None:
     try:
         await bot.start(Config.DISCORD_TOKEN)
     finally:
+        # ファイルサーバーのクリーンアップ
         if server_started:
-            await file_server.stop()
+            try:
+                await file_server.stop()
+            except Exception as e:
+                print(f"ファイルサーバーの停止中にエラーが発生しました: {e}")
         
-        # Botをクローズ（startを使用している場合は明示的にクローズが必要）
-        if not bot.is_closed():
-            await bot.close()
+        # Botのクリーンアップ
+        try:
+            if not bot.is_closed():
+                await bot.close()
+        except Exception as e:
+            print(f"Botのクローズ中にエラーが発生しました: {e}")
 
 
 def main() -> int:
