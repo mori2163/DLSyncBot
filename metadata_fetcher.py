@@ -21,6 +21,7 @@ from qobuz_dl.exceptions import (
 from qobuz_dl.utils import get_url_info
 
 from config import Config
+from command_utils import resolve_command
 from url_parser import ServiceType, URLParser
 
 logger = logging.getLogger(__name__)
@@ -75,8 +76,12 @@ class MetadataFetcher:
     ) -> tuple[int, str, str]:
         """外部コマンドを非同期で実行"""
         try:
+            resolved_cmd, error = resolve_command(cmd)
+            if error:
+                return -1, "", error
+
             process = await asyncio.create_subprocess_exec(
-                *cmd,
+                *resolved_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

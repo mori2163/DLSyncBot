@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from command_utils import resolve_command
+
 
 @dataclass
 class DownloadResult:
@@ -73,8 +75,12 @@ class BaseDownloader(ABC):
         Returns:
             tuple: (リターンコード, 標準出力, 標準エラー出力)
         """
+        resolved_cmd, error = resolve_command(cmd)
+        if error:
+            return -1, "", error
+
         process = await asyncio.create_subprocess_exec(
-            *cmd,
+            *resolved_cmd,
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

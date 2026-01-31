@@ -32,6 +32,7 @@ Discord Botを通じて **Qobuz**、**YouTube**、**Spotify** から音楽をダ
 - Qobuz アカウント（Qobuzを使用する場合）
 - 外部ツール：
   - `ffmpeg`（音源の変換、結合、メタデータ埋め込みに使用）
+  - `Node.js`（YouTubeの取得で `yt-dlp --js-runtimes node` を使うため必要）
   - ※ `qobuz-dl`, `yt-dlp`, `spotdl` は Python の依存関係として自動インストールされます
 
 ## インストール
@@ -226,6 +227,7 @@ MusicDownloaderBot/
 **YouTube:**
 - `yt-dlp` が最新版にアップデートされているか確認: `uv pip install --upgrade yt-dlp`
 - URLが正しいか確認
+- `node` がインストール済みで PATH が通っているか確認: `node --version`
 
 **Spotify:**
 - `spotdl` が最新版か確認: `uv pip install --upgrade spotdl`
