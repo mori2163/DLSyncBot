@@ -59,14 +59,14 @@ class QobuzDownloader(BaseDownloader):
         失敗時は成功するまでリトライを行う
         """
         # ダウンロード前のフォルダ一覧を取得
-        existing_folders = set(self.download_path.iterdir()) if self.download_path.exists() else set()
+        existing_folders = set(self._safe_iterdir(self.download_path)) if self.download_path.exists() else set()
         
         for attempt in range(1, self.max_retries + 1):
             result = await self._execute_download(url, attempt)
             
             if result.success:
                 # 新しく作成されたフォルダを特定
-                new_folders = set(self.download_path.iterdir()) - existing_folders
+                new_folders = set(self._safe_iterdir(self.download_path)) - existing_folders
                 
                 if new_folders:
                     # 最新のフォルダをライブラリに移動

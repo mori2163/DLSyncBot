@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import logging
 import os
 import shutil
 from abc import ABC, abstractmethod
@@ -12,6 +13,8 @@ from typing import Optional
 
 from command_utils import resolve_command
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -59,6 +62,28 @@ class BaseDownloader(ABC):
     def folder_prefix(self) -> str:
         """フォルダ名の接頭辞（必要に応じてオーバーライド）"""
         return ""
+
+    def _get_ffmpeg_path(self) -> Optional[Path]:
+        """FFMPEG_PATHを検証して返す"""
+        if not Config.FFMPEG_PATH:
+            return None
+
+        ffmpeg_path = Path(Config.FFMPEG_PATH)
+        if not ffmpeg_path.exists():
+            logger.warning(f"FFMPEG_PATHが存在しません: {ffmpeg_path}")
+            return None
+        if not ffmpeg_path.is_file() and not ffmpeg_path.is_dir():
+            logger.warning(f"FFMPEG_PATHがファイル/ディレクトリではありません: {ffmpeg_path}")
+            return None
+        return ffmpeg_path
+
+    def _safe_iterdir(self, path: Path) -> list[Path]:
+        """ディレクトリ一覧を安全に取得"""
+        try:
+            return list(path.iterdir())
+        except OSError as e:
+            logger.warning(f"フォルダ一覧の取得に失敗しました: {path} - {e}")
+            return []
     
     async def run_command(
         self,
@@ -83,11 +108,11 @@ class BaseDownloader(ABC):
 
         # 実行時環境変数の構築
         env = os.environ.copy()
-        if Config.FFMPEG_PATH:
-            ffmpeg_path = Path(Config.FFMPEG_PATH)
+        ffmpeg_path = self._get_ffmpeg_path()
+        if ffmpeg_path:
             # ディレクトリパスの場合はそのまま、実行ファイルパスの場合は親ディレクトリをPATHに追加
-            ffmpeg_dir = str(ffmpeg_path.parent) if ffmpeg_path.is_file() else str(ffmpeg_path)
-            
+            ffmpeg_dir = ffmpeg_path.parent if ffmpeg_path.is_file() else ffmpeg_path
+
             path_sep = ";" if os.name == "nt" else ":"
             env["PATH"] = f"{ffmpeg_dir}{path_sep}{env.get('PATH', '')}"
 

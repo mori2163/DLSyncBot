@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 from dataclasses import dataclass
 from typing import Optional
 
@@ -45,6 +46,7 @@ class MetadataFetcher:
 
     _qobuz_client = None
     _qobuz_lock = None
+    _qobuz_lock_init = threading.Lock()
     
     @classmethod
     async def fetch(cls, url: str) -> Optional[MediaMetadata]:
@@ -332,7 +334,9 @@ class MetadataFetcher:
             return cls._qobuz_client
 
         if cls._qobuz_lock is None:
-            cls._qobuz_lock = asyncio.Lock()
+            with cls._qobuz_lock_init:
+                if cls._qobuz_lock is None:
+                    cls._qobuz_lock = asyncio.Lock()
 
         async with cls._qobuz_lock:
             if cls._qobuz_client:

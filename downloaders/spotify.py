@@ -25,7 +25,7 @@ class SpotifyDownloader(BaseDownloader):
         Spotifyから音楽をダウンロードする
         """
         # ダウンロード前のフォルダ一覧を取得
-        existing_folders = set(self.download_path.iterdir()) if self.download_path.exists() else set()
+        existing_folders = set(self._safe_iterdir(self.download_path)) if self.download_path.exists() else set()
         
         # 出力テンプレート: {artist} - {album}/{title}.{output-ext}
         output_template = "{artist} - {album}/{title}.{output-ext}"
@@ -51,7 +51,7 @@ class SpotifyDownloader(BaseDownloader):
             )
         
         # 新しく作成されたフォルダを特定
-        new_folders = set(self.download_path.iterdir()) - existing_folders
+        new_folders = set(self._safe_iterdir(self.download_path)) - existing_folders
         
         if new_folders:
             results = []

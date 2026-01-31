@@ -8,8 +8,9 @@ import logging
 import re
 from pathlib import Path
 
-from .base import BaseDownloader, DownloadResult
 from config import Config
+
+from .base import BaseDownloader, DownloadResult
 
 logger = logging.getLogger(__name__)
 
@@ -32,33 +33,49 @@ class YouTubeDownloader(BaseDownloader):
         # 出力テンプレート: アーティスト - タイトル/タイトル.拡張子
         # プレイリストの場合はプレイリスト名をフォルダ名に使用
         output_template = str(
-            self.download_path / "%(playlist_title,channel)s - %(title)s" / "%(title)s.%(ext)s"
+            self.download_path
+            / "%(playlist_title,channel)s - %(title)s"
+            / "%(title)s.%(ext)s"
         )
         
         # クライアント設定とPO Tokenの設定
-        client_arg = "ios,web"
-        extractor_args = [f"youtube:player_client={client_arg}"]
-        
         if Config.YOUTUBE_PO_TOKEN:
-            # iosクライアント用のTokenとして設定（必要に応じてweb用なども検討）
-            extractor_args.append(f"youtube:po_token=ios.gvs+{Config.YOUTUBE_PO_TOKEN}")
+            # Tokenがある場合は制限の回避を試みるためにiosを優先
+            client_arg = "ios,web"
+            extractor_args = [
+                f"youtube:player_client={client_arg}",
+                f"youtube:po_token=ios.gvs+{Config.YOUTUBE_PO_TOKEN}",
+            ]
+        else:
+            # Tokenがない場合は、警告を減らすためにwebを試みる
+            # (ejs:githubによりnシグネチャ問題を回避)
+            client_arg = "web"
+            extractor_args = [f"youtube:player_client={client_arg}"]
         
         cmd = [
             "yt-dlp",
-            "--js-runtimes", "node",
-            "--extractor-args", "; ".join(extractor_args),
+            "--js-runtimes",
+            "node",
+            "--remote-components",
+            "ejs:github",
+            "--extractor-args",
+            "; ".join(extractor_args),
             "--extract-audio",
-            "--audio-format", "opus",
-            "--audio-quality", "0",  # 最高品質
+            "--audio-format",
+            "opus",
+            "--audio-quality",
+            "0",  # 最高品質
             "--embed-thumbnail",
             "--embed-metadata",
-            "--output", output_template,
+            "--output",
+            output_template,
             "--no-playlist" if "list=" not in url else "--yes-playlist",
         ]
         
         # ffmpegのパスが設定されている場合は追加
-        if Config.FFMPEG_PATH:
-            cmd.extend(["--ffmpeg-location", Config.FFMPEG_PATH])
+        ffmpeg_path = self._get_ffmpeg_path()
+        if ffmpeg_path:
+            cmd.extend(["--ffmpeg-location", str(ffmpeg_path)])
         
         cmd.append(url)
         
@@ -103,24 +120,36 @@ class YouTubeDownloader(BaseDownloader):
         
         try:
             # yt-dlpでサムネイルのみを取得
-            client_arg = "ios,web"
-            extractor_args = [f"youtube:player_client={client_arg}"]
             if Config.YOUTUBE_PO_TOKEN:
-                extractor_args.append(f"youtube:po_token=ios.gvs+{Config.YOUTUBE_PO_TOKEN}")
+                client_arg = "ios,web"
+                extractor_args = [
+                    f"youtube:player_client={client_arg}",
+                    f"youtube:po_token=ios.gvs+{Config.YOUTUBE_PO_TOKEN}",
+                ]
+            else:
+                client_arg = "web"
+                extractor_args = [f"youtube:player_client={client_arg}"]
 
             cmd = [
                 "yt-dlp",
-                "--js-runtimes", "node",
-                "--extractor-args", "; ".join(extractor_args),
+                "--js-runtimes",
+                "node",
+                "--remote-components",
+                "ejs:github",
+                "--extractor-args",
+                "; ".join(extractor_args),
                 "--skip-download",
                 "--write-thumbnail",
-                "--convert-thumbnails", "jpg",
-                "--output", str(folder / "cover"),
+                "--convert-thumbnails",
+                "jpg",
+                "--output",
+                str(folder / "cover"),
                 "--no-playlist",
             ]
 
-            if Config.FFMPEG_PATH:
-                cmd.extend(["--ffmpeg-location", Config.FFMPEG_PATH])
+            ffmpeg_path = self._get_ffmpeg_path()
+            if ffmpeg_path:
+                cmd.extend(["--ffmpeg-location", str(ffmpeg_path)])
             
             cmd.append(url)
             
@@ -156,7 +185,7 @@ class YouTubeDownloader(BaseDownloader):
                 return file_path.parent
         
         # フォルダ名パターンで探す
-        for folder in self.download_path.iterdir():
+        for folder in self._safe_iterdir(self.download_path):
             if folder.is_dir():
                 return folder
         
