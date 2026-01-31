@@ -3,7 +3,7 @@ Discord Bot本体
 スラッシュコマンドによるダウンロードリクエストを処理する
 """
 
-import asyncio
+import logging
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -18,6 +18,7 @@ from metadata_fetcher import MetadataFetcher, MediaMetadata
 from archive_utils import create_zip_archive, format_file_size
 from file_server import get_file_server
 
+logger = logging.getLogger(__name__)
 
 # サービス別の絵文字とカラー
 SERVICE_ICONS = {
@@ -55,6 +56,8 @@ class DownloadConfirmView(discord.ui.View):
         button: discord.ui.Button,
     ) -> None:
         """ダウンロードボタンが押されたときの処理"""
+        logger.info(f"ダウンロードボタン押下: user={interaction.user}, url={self.metadata.url}")
+        
         # メッセージIDを取得して渡す（進捗更新用）
         message_id = self.message.id if self.message else None
         
@@ -67,6 +70,7 @@ class DownloadConfirmView(discord.ui.View):
         )
         
         if success:
+            logger.info(f"キュー追加成功: task_id={task.id[:8]}")
             icon, color = SERVICE_ICONS.get(
                 self.metadata.service, ("🎵", discord.Color.blue())
             )
@@ -102,6 +106,7 @@ class DownloadConfirmView(discord.ui.View):
                     original_embed.set_footer(text="⏳ ダウンロード待機中...")
                     await self.message.edit(embed=original_embed, view=self)
         else:
+            logger.warning(f"キュー追加失敗: {message}")
             embed = discord.Embed(
                 title="❌ キュー追加失敗",
                 description=message,
@@ -124,6 +129,7 @@ class DownloadConfirmView(discord.ui.View):
         button: discord.ui.Button,
     ) -> None:
         """キャンセルボタンが押されたときの処理"""
+        logger.info(f"キャンセルボタン押下: user={interaction.user}")
         # 元のメッセージを削除
         if self.message:
             await self.message.delete()
@@ -181,6 +187,7 @@ class MusicDownloaderBot(commands.Bot):
     
     async def setup_hook(self) -> None:
         """Bot起動時の初期化処理"""
+        logger.info("setup_hook: コマンド登録開始")
         # コマンド登録
         self.tree.add_command(dl_command)
         self.tree.add_command(queue_command)
@@ -188,14 +195,16 @@ class MusicDownloaderBot(commands.Bot):
         # キューワーカーを開始
         self.queue_manager.set_progress_callback(self._on_task_progress)
         await self.queue_manager.start_worker()
+        logger.info("setup_hook: キューワーカー開始")
         
         # コマンドを同期
         await self.tree.sync()
+        logger.info("setup_hook: コマンド同期完了")
     
     async def on_ready(self) -> None:
         """Bot準備完了時"""
-        print(f"ログイン完了: {self.user}")
-        print(f"接続サーバー数: {len(self.guilds)}")
+        logger.info(f"ログイン完了: {self.user}")
+        logger.info(f"接続サーバー数: {len(self.guilds)}")
     
     async def _update_preview_message(
         self,
@@ -211,9 +220,9 @@ class MusicDownloaderBot(commands.Bot):
             try:
                 channel = await self.fetch_channel(task.channel_id)
             except (discord.NotFound, discord.Forbidden):
-                print(f"チャンネル取得失敗: {task.channel_id}")
+                logger.warning(f"チャンネル取得失敗: {task.channel_id}")
                 return
-        if not isinstance(channel, discord.TextChannel):
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             return
         
         try:
@@ -229,14 +238,19 @@ class MusicDownloaderBot(commands.Bot):
     
     async def _on_task_progress(self, task: DownloadTask) -> None:
         """タスク進捗通知"""
+        logger.info(f"タスク進捗通知: task_id={task.id[:8]}, status={task.status.name}")
+        
         channel = self.get_channel(task.channel_id)
         if not channel:
+            # チャンネルキャッシュなし、fetchする
             try:
                 channel = await self.fetch_channel(task.channel_id)
-            except (discord.NotFound, discord.Forbidden):
-                print(f"チャンネル取得失敗: {task.channel_id}")
+                
+            except (discord.NotFound, discord.Forbidden) as e:
+                logger.error(f"チャンネル取得失敗: {task.channel_id}, error={e}")
                 return
-        if not isinstance(channel, discord.TextChannel):
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            logger.warning(f"サポート外のチャンネル: type={type(channel)}")
             return
         
         user_mention = f"<@{task.requester_id}>"
@@ -244,6 +258,7 @@ class MusicDownloaderBot(commands.Bot):
         icon, color = SERVICE_ICONS.get(task.service, ("🎵", discord.Color.blue()))
         
         if task.status == TaskStatus.RUNNING:
+            logger.info(f"タスク実行中: {task.id[:8]}")
             # プレビューメッセージを更新
             await self._update_preview_message(
                 task,
@@ -253,6 +268,7 @@ class MusicDownloaderBot(commands.Bot):
             # 新しい通知メッセージは送信しない（プレビューメッセージで状態がわかるため）
         
         elif task.status == TaskStatus.COMPLETED:
+            logger.info(f"タスク完了: {task.id[:8]}, result={task.result}")
             # プレビューメッセージを更新
             await self._update_preview_message(
                 task,
@@ -269,6 +285,7 @@ class MusicDownloaderBot(commands.Bot):
             # アルバム/フォルダ名を表示
             folder_name = None
             if task.result and task.result.folder_path:
+                logger.info(f"フォルダパス: {task.result.folder_path}")
                 # 接頭辞を除去して表示
                 folder_name = task.result.folder_path.name
                 for prefix in [Config.YOUTUBE_PREFIX, Config.SPOTIFY_PREFIX]:
@@ -277,7 +294,7 @@ class MusicDownloaderBot(commands.Bot):
                         break
                 embed.add_field(
                     name="📁 アルバム",
-                    value=f"`{folder_name}`",
+                    value=f"{folder_name}",
                     inline=False,
                 )
             
@@ -303,12 +320,14 @@ class MusicDownloaderBot(commands.Bot):
             
             try:
                 if task.result and task.result.folder_path and task.result.folder_path.exists():
+                    logger.info(f"zipアーカイブ作成開始: {task.result.folder_path}")
                     # zipアーカイブを作成（ライブラリではなく一時フォルダに出力）
                     zip_output_path = Config.DOWNLOAD_PATH / f"{task.result.folder_path.name}.zip"
                     zip_path, zip_size = await create_zip_archive(
                         task.result.folder_path,
                         output_path=zip_output_path,
                     )
+                    logger.info(f"zipアーカイブ作成完了: path={zip_path}, size={zip_size}")
                     
                     if zip_path and zip_size > 0:
                         size_str = format_file_size(zip_size)
@@ -318,6 +337,7 @@ class MusicDownloaderBot(commands.Bot):
                         
                         if zip_size < Config.DOWNLOAD_SIZE_THRESHOLD:
                             # 10MB以下: Discordに直接添付
+                            logger.info(f"Discord直接添付: {zip_path}")
                             try:
                                 file_attachment = discord.File(
                                     zip_path,
@@ -329,6 +349,7 @@ class MusicDownloaderBot(commands.Bot):
                                     inline=False,
                                 )
                             except Exception as e:
+                                logger.error(f"ファイル添付準備失敗: {e}")
                                 embed.add_field(
                                     name="⚠️ 添付エラー",
                                     value=f"ファイルの添付準備に失敗しました: {e}",
@@ -336,6 +357,7 @@ class MusicDownloaderBot(commands.Bot):
                                 )
                         else:
                             # 10MB以上: ダウンロードリンクを生成
+                            logger.info(f"ダウンロードリンク生成: {zip_path}")
                             try:
                                 file_server = get_file_server()
                                 if Config.FILE_SERVER_BASE_URL:
@@ -369,13 +391,17 @@ class MusicDownloaderBot(commands.Bot):
                                         inline=False,
                                     )
                             except Exception as e:
+                                logger.error(f"リンク生成失敗: {e}")
                                 embed.add_field(
                                     name="⚠️ リンク生成エラー",
                                     value=f"ダウンロードリンクの生成に失敗しました: {e}",
                                     inline=False,
                                 )
+                else:
+                    logger.warning(f"フォルダが存在しない: {task.result.folder_path if task.result else 'None'}")
                 
                 # メッセージを送信
+                logger.info("完了通知メッセージ送信開始")
                 send_kwargs = {
                     "content": user_mention,
                     "embed": embed,
@@ -386,11 +412,10 @@ class MusicDownloaderBot(commands.Bot):
                     send_kwargs["view"] = download_view
                 
                 await channel.send(**send_kwargs)
+                logger.info("完了通知メッセージ送信成功")
             except Exception as e:
-                # 送信エラー時の処理。ログに残しつつ、フォールバック通知を試みる
-                import traceback
-                print(f"通知送信エラー: {e}")
-                traceback.print_exc()
+                # 送信エラー時の処理
+                logger.exception(f"通知送信エラー: {e}")
                 try:
                     # 簡潔なメッセージで再試行
                     await channel.send(f"{user_mention} 通知の送信に失敗しましたが、ダウンロードは完了しています。")
@@ -401,15 +426,17 @@ class MusicDownloaderBot(commands.Bot):
                         if user:
                             await user.send(f"通知の送信に失敗しましたが、ダウンロードは完了しました。タスクID: {task.id[:8]}")
                     except Exception as dm_e:
-                        print(f"DM送信失敗: {dm_e}")
+                        logger.error(f"DM送信失敗: {dm_e}")
             finally:
                 # 添付ファイルを閉じて一時ファイルを削除
                 if file_attachment:
                     file_attachment.close()
                 if zip_to_cleanup and zip_to_cleanup.exists():
                     zip_to_cleanup.unlink()
+                    logger.info(f"一時zipファイル削除: {zip_to_cleanup}")
         
         elif task.status == TaskStatus.FAILED:
+            logger.warning(f"タスク失敗: {task.id[:8]}, error={task.result.error if task.result else 'Unknown'}")
             # プレビューメッセージを更新
             await self._update_preview_message(
                 task,
@@ -432,7 +459,7 @@ class MusicDownloaderBot(commands.Bot):
                     error_text += "..."
                 embed.add_field(
                     name="⚠️ エラー詳細",
-                    value=f"```\n{error_text}\n```",
+                    value=f"`\n{error_text}\n`",
                     inline=False,
                 )
             embed.set_footer(text=f"タスクID: {task.id[:8]}")
@@ -456,11 +483,13 @@ def get_bot() -> MusicDownloaderBot:
 @app_commands.describe(url="ダウンロード対象のURL（Qobuz、YouTube、Spotify）")
 async def dl_command(interaction: discord.Interaction, url: str) -> None:
     """ダウンロードコマンド"""
+    logger.info(f"/dl コマンド実行: user={interaction.user}, url={url}")
     bot_instance = get_bot()
     
     # URL検証
     service = URLParser.detect_service(url)
     if service == ServiceType.UNKNOWN:
+        logger.warning(f"非対応URL: {url}")
         embed = discord.Embed(
             title="❌ 非対応のURL",
             description="Qobuz、YouTube、Spotifyのリンクを指定してください。",
@@ -481,6 +510,7 @@ async def dl_command(interaction: discord.Interaction, url: str) -> None:
     icon, color = SERVICE_ICONS.get(service, ("🎵", discord.Color.blue()))
     service_name = URLParser.get_service_name(service)
     
+    logger.info(f"メタデータ取得開始: service={service_name}")
     loading_embed = discord.Embed(
         title=f"{icon} メタデータ取得中...",
         description=f"**{service_name}** から情報を取得しています",
@@ -492,6 +522,7 @@ async def dl_command(interaction: discord.Interaction, url: str) -> None:
     metadata = await MetadataFetcher.fetch(url)
     
     if metadata is None:
+        logger.warning(f"メタデータ取得失敗、フォールバック使用: {url}")
         # メタデータ取得失敗時はフォールバック
         metadata = MediaMetadata(
             title=f"{service_name} コンテンツ",
@@ -499,6 +530,8 @@ async def dl_command(interaction: discord.Interaction, url: str) -> None:
             service=service,
             url=url,
         )
+    else:
+        logger.info(f"メタデータ取得成功: title={metadata.title}, artist={metadata.artist}")
     
     # プレビュー用Embedを作成
     embed = discord.Embed(
@@ -532,11 +565,13 @@ async def dl_command(interaction: discord.Interaction, url: str) -> None:
     # メッセージを更新
     message = await interaction.edit_original_response(embed=embed, view=view)
     view.message = message
+    logger.info(f"プレビュー表示完了: message_id={message.id}")
 
 
 @app_commands.command(name="queue", description="ダウンロードキューの状態を表示")
 async def queue_command(interaction: discord.Interaction) -> None:
     """キュー状態表示コマンド"""
+    logger.info(f"/queue コマンド実行: user={interaction.user}")
     bot_instance = get_bot()
     pending, current = bot_instance.queue_manager.get_queue_info()
     
@@ -552,7 +587,7 @@ async def queue_command(interaction: discord.Interaction) -> None:
         icon, _ = SERVICE_ICONS.get(current.service, ("🎵", discord.Color.blue()))
         embed.add_field(
             name="▶️ 実行中",
-            value=f"{icon} {service_name}\n`{current.url[:50]}...`" if len(current.url) > 50 else f"{icon} {service_name}\n`{current.url}`",
+            value=f"{icon} {service_name}\n{current.url[:50]}..." if len(current.url) > 50 else f"{icon} {service_name}\n{current.url}",
             inline=False,
         )
     else:
