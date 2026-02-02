@@ -3,7 +3,6 @@ YouTubeダウンローダー
 yt-dlpを使用して音声をダウンロードする
 """
 
-import json
 import logging
 import re
 from pathlib import Path
@@ -30,6 +29,8 @@ class YouTubeDownloader(BaseDownloader):
         """
         YouTubeから音声をダウンロードする
         """
+        logger.info(f"YouTubeダウンロード開始: {url}")
+        
         # 出力テンプレート: アーティスト - タイトル/タイトル.拡張子
         # プレイリストの場合はプレイリスト名をフォルダ名に使用
         output_template = str(
@@ -79,9 +80,12 @@ class YouTubeDownloader(BaseDownloader):
         
         cmd.append(url)
         
+        logger.info(f"yt-dlpコマンド実行中...")
         returncode, stdout, stderr = await self.run_command(cmd)
+        logger.info(f"yt-dlp完了: returncode={returncode}")
         
         if returncode != 0:
+            logger.error(f"yt-dlp失敗: {stderr or stdout}")
             return DownloadResult(
                 success=False,
                 message="ダウンロード失敗",
@@ -90,14 +94,23 @@ class YouTubeDownloader(BaseDownloader):
         
         # ダウンロードされたフォルダを特定
         # yt-dlpの出力からファイルパスを抽出
+        logger.info("ダウンロードフォルダ特定中...")
         downloaded_folder = self._find_downloaded_folder(stdout)
+        logger.info(f"特定されたフォルダ: {downloaded_folder}")
         
         if downloaded_folder and downloaded_folder.exists():
             # cover.jpgを生成
+            logger.info(f"cover.jpg生成開始: {downloaded_folder}")
             await self._generate_cover(url, downloaded_folder)
             
+            logger.info("オーディオファイルカウント中...")
             file_count = self.count_audio_files(downloaded_folder)
+            logger.info(f"ファイル数: {file_count}")
+            
+            logger.info(f"ライブラリへ移動中: {downloaded_folder} -> {self.library_path}")
             dest = self.move_to_library(downloaded_folder, add_prefix=True)
+            logger.info(f"移動完了: {dest}")
+            
             return DownloadResult(
                 success=True,
                 message=f"ダウンロード完了: {dest.name}",
@@ -105,6 +118,7 @@ class YouTubeDownloader(BaseDownloader):
                 file_count=file_count,
             )
         
+        logger.warning(f"フォルダ特定不可: downloaded_folder={downloaded_folder}")
         return DownloadResult(
             success=True,
             message="ダウンロード完了（フォルダ特定不可）",
@@ -116,6 +130,7 @@ class YouTubeDownloader(BaseDownloader):
         
         # 既にcover.jpgがあればスキップ
         if cover_path.exists():
+            logger.info(f"cover.jpg既存、スキップ: {cover_path}")
             return
         
         try:
@@ -153,6 +168,7 @@ class YouTubeDownloader(BaseDownloader):
             
             cmd.append(url)
             
+            logger.info("サムネイル取得コマンド実行中...")
             returncode, stdout, stderr = await self.run_command(cmd)
             
             if returncode == 0:
@@ -170,7 +186,7 @@ class YouTubeDownloader(BaseDownloader):
             else:
                 logger.warning(f"サムネイル取得失敗: {stderr}")
         except Exception as e:
-            logger.warning(f"cover.jpg生成中にエラー: {e}")
+            logger.exception(f"cover.jpg生成中にエラー: {e}")
     
     def _find_downloaded_folder(self, output: str) -> Path | None:
         """yt-dlpの出力からダウンロードされたフォルダを特定"""
@@ -181,12 +197,15 @@ class YouTubeDownloader(BaseDownloader):
         if matches:
             # 最初のファイルの親フォルダを返す
             file_path = Path(matches[0])
+            logger.info(f"出力から検出したパス: {file_path}")
             if file_path.parent.exists():
                 return file_path.parent
         
         # フォルダ名パターンで探す
+        logger.info(f"フォールバック: {self.download_path} 内のフォルダを検索")
         for folder in self._safe_iterdir(self.download_path):
             if folder.is_dir():
+                logger.info(f"フォルダ発見: {folder}")
                 return folder
         
         return None
