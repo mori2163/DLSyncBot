@@ -134,10 +134,18 @@ class TunnelManager:
                     return self._public_url
                 if self._process.returncode is not None:
                     logger.error("cloudflaredが予期せず終了しました")
+                    try:
+                        await self.stop()
+                    except Exception as stop_error:
+                        logger.error(f"トンネル停止中にエラーが発生しました: {stop_error}")
                     return None
                 await asyncio.sleep(0.5)
 
             logger.warning("公開URLの取得がタイムアウトしました")
+            try:
+                await self.stop()
+            except Exception as stop_error:
+                logger.error(f"トンネル停止中にエラーが発生しました: {stop_error}")
             return None
 
         except FileNotFoundError:
@@ -191,6 +199,7 @@ class TunnelManager:
             await asyncio.sleep(2)
             if self._process.returncode is not None:
                 logger.error("cloudflaredが予期せず終了しました")
+                await self.stop()
                 return False
 
             logger.info("Named Tunnelを開始しました")
@@ -202,7 +211,6 @@ class TunnelManager:
         except Exception as e:
             logger.error(f"トンネル開始エラー: {e}")
             return False
-
     async def stop(self) -> None:
         """トンネルを停止"""
         if self._output_task:
@@ -243,5 +251,11 @@ def get_tunnel_manager(local_port: Optional[int] = None) -> TunnelManager:
             if Config.CLOUDFLARE_CONFIG_PATH
             else None,
             cloudflared_path=Config.CLOUDFLARED_PATH or None,
+        )
+    elif local_port is not None and _tunnel_manager.local_port != local_port:
+        logger.warning(
+            "既存のTunnelManagerを再利用します。"
+            f"渡されたlocal_port={local_port}は無視され、"
+            f"既存のlocal_port={_tunnel_manager.local_port}が使用されます。"
         )
     return _tunnel_manager

@@ -72,6 +72,7 @@ class FileServer:
         self._site: Optional[web.TCPSite] = None
         self._cleanup_task: Optional[asyncio.Task] = None
         self._download_callback: Optional[Callable[[DownloadToken], Awaitable[None]]] = None
+        self._background_tasks: set[asyncio.Future] = set()
 
     def set_download_callback(
         self,
@@ -85,9 +86,11 @@ class FileServer:
         if not self._download_callback:
             return
 
-        task = asyncio.create_task(self._download_callback(token))
+        task = asyncio.ensure_future(self._download_callback(token))
+        self._background_tasks.add(task)
 
-        def _log_error(done_task: asyncio.Task) -> None:
+        def _log_error(done_task: asyncio.Future) -> None:
+            self._background_tasks.discard(done_task)
             if done_task.cancelled():
                 return
             error = done_task.exception()
@@ -273,6 +276,7 @@ class FileServer:
         ):
             return web.Response(status=400, text="Invalid file name")
         stored_name = f"{uuid.uuid4()}_{original_name}"
+        Config.UPLOAD_PATH.mkdir(parents=True, exist_ok=True)
         target_path = Config.UPLOAD_PATH / stored_name
 
         size = 0

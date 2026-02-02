@@ -49,6 +49,10 @@ async def start_bot() -> None:
                         tunnel_started = True
                         logger.info("Named Tunnelを開始しました")
                     else:
+                        logger.error(
+                            "Named Tunnelの開始に失敗しました: "
+                            f"success={success}"
+                        )
                         await file_server.stop()
                         server_started = False
                 else:
@@ -56,9 +60,14 @@ async def start_bot() -> None:
                     if public_url:
                         tunnel_started = True
                         base_url = public_url
+                        Config.FILE_SERVER_BASE_URL = base_url
 
                         logger.info(f"Quick Tunnel公開URL: {public_url}")
                     else:
+                        logger.error(
+                            "Quick Tunnelの開始に失敗しました: "
+                            f"public_url={public_url}"
+                        )
                         await file_server.stop()
                         server_started = False
             except Exception as e:
