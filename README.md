@@ -1,53 +1,47 @@
+
 # DLSyncBot
 
-Discord Botを通じて **Qobuz**、**YouTube**、**Spotify** から音楽をダウンロードし、メタデータとジャケット画像を付与した上で、**Navidrome** で配信可能な状態にする多機能ダウンロードBot。
+DLSyncBotは、Discordを通じて **Qobuz**、**YouTube**、**Spotify** から音楽をダウンロードし、メタデータ整理から **Navidrome** への配信準備までを自動化する多機能Discord Botです。
 
 ## 概要
 
-このBotは以下の機能を提供します：
+音楽収集のワークフロー（ダウンロード、タグ付け、フォルダ整理、ライブラリ追加）をDiscordのコマンド一つで完結させます。
 
--  **複数サービス対応**: Qobuz (FLAC)、YouTube、Spotify のダウンロードに対応（Spotifyはyoutubeからの音源取得を利用）
--  **キュー管理**: 複数リクエストを順番に処理
--  **メタデータ自動埋め込み**: ID3タグ、ジャケット画像の自動管理
--  **Navidrome連携**: ダウンロード後、自動的にライブラリフォルダに配置
--  **堅牢なエラー処理**: Qobuzダウンロード失敗時は自動リトライ
--  **進捗通知**: Discord上でダウンロード状況をリアルタイム通知
--  **ダウンロードリンク**: 完了後にファイルをダウンロード可能（10MB以下は直接添付、10MB以上は一時リンク）
+- **マルチプラットフォーム対応**: Qobuz (FLAC/Hi-Res)、YouTube、Spotifyに対応。
+- **Navidrome連携**: ダウンロードファイルをNavidromeのライブラリフォルダへ自動配置。
+- **メタデータ自動管理**: ジャケット画像、アルバム名、アーティスト名などのタグ情報（ID3）を自動で埋め込みます。
+- **ダウンロードリンク発行**: Botがファイルをサーバーへ送信できないサイズの場合、一時的なダウンロードリンクを発行します。
 
 ## 主な特徴
 
-### 音源の差別化
-- **Qobuz**: 高品質音源（FLAC）として、フォルダ名接頭辞なし
-- **YouTube**: `[YT]` 接頭辞付きで識別
-- **Spotify**: `[SP]` 接頭辞付きで識別
+### 音源ソースの識別
+保存されるフォルダ名で音源の取得元を判別可能です：
+- **Qobuz**: 接頭辞なし (例: `Artist - Title`) - 高品質(FLAC)
+- **YouTube**: `[YT]` 接頭辞 (例: `[YT] Artist - Title`)
+- **Spotify**: `[SP]` 接頭辞 (例: `[SP] Artist - Title`) - 音源はYouTubeから補完
 
-### エラー対策
-- **Qobuzの堅牢性**: ダウンロード失敗時は最大3回まで自動リトライ
-- **非同期処理**: Botの応答性を損なわないバックグラウンド処理
-- **詳細なエラー通知**: 失敗時はエラー内容をDiscordに報告
+## 前提条件
 
-## 必要要件
-
-- Python 3.11 以上
-- Discord Bot トークン
-- Qobuz アカウント（Qobuzを使用する場合）
-- 外部ツール：
-  - `ffmpeg`（音源の変換、結合、メタデータ埋め込みに使用）
-  - `Node.js`（YouTubeの取得で `yt-dlp --js-runtimes node` を使うため必要）
-  - ※ `qobuz-dl`, `yt-dlp`, `spotdl` は Python の依存関係として自動インストールされます
+- **Python 3.11** 以上
+- **FFmpeg**: 音声変換・タグ編集に必須です。システムパスに通してください。
+- **Node.js**: `yt-dlp` の一部機能で必要となる場合があります。
+- **Discord Bot Token**: Discord Developer Portal で取得したもの。
+- **Qobuz アカウント**: Qobuzを利用する場合に必要です（サブスクリプション有効なもの）。
 
 ## インストール
 
-### 1. リポジトリをクローン
+### 1. リポジトリのクローン
 
 ```bash
 git clone <repository-url>
 cd MusicDownloaderBot
 ```
 
-### 2. 環境構築（uv を使用）
+### 2. 環境構築
 
-[uv](https://docs.astral.sh/uv/) は高速なPythonパッケージマネージャーです。以下でインストールできます：
+Pythonパッケージマネージャー [uv](https://docs.astral.sh/uv/) の使用を推奨しています。
+
+**uv のインストール:**
 
 ```bash
 # macOS / Linux
@@ -57,10 +51,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-仮想環境を作成して依存関係をインストール：
+**依存関係のインストール:**
 
 ```bash
-# 仮想環境作成と依存関係インストール
+# 仮想環境の作成とライブラリのインストール
 uv sync
 
 # または明示的にPythonバージョンを指定
@@ -69,71 +63,45 @@ uv sync --python 3.11
 
 ### 3. 環境変数の設定
 
-`.env.example` をコピーして `.env` を作成：
+`.env.example` をコピーして `.env` ファイルを作成し、設定を書き込みます。
 
 ```bash
 cp .env.example .env
 ```
 
-`.env` ファイルを編集して、以下の情報を設定：
+**`.env` の主要設定項目:**
 
 ```env
-# Discord Bot トークン（必須）
+# Discord設定 (必須)
 DISCORD_TOKEN=your_discord_bot_token_here
 
-# Qobuz認証情報
+# Qobuz設定 (利用する場合)
 QOBUZ_EMAIL=your_email@example.com
 QOBUZ_PASSWORD=your_password_here
 
-# ライブラリパス（Navidromeの監視フォルダを指定）
+# パス設定
+## Navidromeが監視しているライブラリフォルダ
 LIBRARY_PATH=C:/path/to/your/navidrome/music/library
-
-# ダウンロード先（一時保存場所、デフォルト: ./downloads）
+## Botの一時作業用フォルダ
 DOWNLOAD_PATH=./downloads
-
-# その他の設定
-MAX_RETRIES=3
-QUEUE_MAX_SIZE=100
 ```
-
-### Discord Bot トークンの取得方法
-
-1. [Discord Developer Portal](https://discord.com/developers/applications) にアクセス
-2. 「New Application」から新しいアプリケーションを作成
-3. 「Bot」タブから「Add Bot」をクリック
-4. 「TOKEN」セクションから「Copy」でトークンをコピー
-5. `.env` ファイルの `DISCORD_TOKEN` に貼り付け
 
 ## 使用方法
 
-### Bot の起動
+### Botの起動
 
 ```bash
-# uvの仮想環境内で実行
+# uv環境で起動
 uv run python main.py
 ```
 
-または：
+### 常駐化・永続化 (推奨)
 
-```bash
-# 仮想環境をアクティベート
-source .venv/bin/activate  # Linux/macOS
-# または
-.venv\Scripts\activate  # Windows
-
-python main.py
-```
-
-### 常駐実行（PM2 を使用する場合）
-
-サーバーなどで永続的に実行したい場合は、[PM2](https://pm2.keymetrics.io/) を使用できます。
+サーバーで運用する場合は [PM2](https://pm2.keymetrics.io/) の使用を推奨します。
 
 ```bash
 # 起動
 pm2 start ecosystem.config.js
-
-# ステータス確認
-pm2 status
 
 # ログ確認
 pm2 logs music-downloader-bot
@@ -141,276 +109,154 @@ pm2 logs music-downloader-bot
 
 ### Discord コマンド
 
-Bot が起動したら、Discordサーバーで以下のコマンドが使用可能：
+Bot参加中のサーバーで以下のスラッシュコマンドを使用できます。
 
 #### `/dl <url>`
-URLから音楽をダウンロード
+指定したURLから音楽をダウンロードします。
 
-**使用例:**
-```
-/dl https://open.qobuz.com/album/123456
-/dl https://www.youtube.com/watch?v=dQw4w9WgXcQ
-/dl https://open.spotify.com/track/123456
-```
-
-**対応URL:**
-- Qobuz: `https://open.qobuz.com/` または `https://play.qobuz.com/`
-- YouTube: `https://www.youtube.com/watch?v=...` または `https://youtu.be/...`
-- Spotify: `https://open.spotify.com/` (トラック、アルバム、プレイリスト対応)
+**対応URL例:**
+- **Qobuz**: `https://open.qobuz.com/album/...` (アルバム/トラック)
+- **YouTube**: `https://youtu.be/...` (動画/音楽)
+- **Spotify**: `https://open.spotify.com/track/...` (トラック/アルバム/プレイリスト)
 
 #### `/queue`
-現在のキュー状態を表示
+現在のダウンロードキューの状態（処理中、待機中のタスク数）を表示します。
 
-**表示内容:**
-- 実行中のタスク
-- 待機中のタスク数
+## ファイル配信機能（ダウンロードリンク）
 
-## ファイル構成
+Discordのファイル添付制限（通常25MB等）を超えるファイルの場合、Botは**一時的なダウンロードリンク**を生成します。
 
-```
-MusicDownloaderBot/
-├── main.py              # エントリーポイント
-├── bot.py               # Discord Bot本体
-├── config.py            # 設定管理
-├── url_parser.py        # URL判別ロジック
-├── queue_manager.py     # ダウンロードキュー管理
-├── metadata_fetcher.py  # メタデータ取得・加工ロジック
-├── archive_utils.py     # zipアーカイブユーティリティ
-├── file_server.py       # ファイル配信サーバー（ダウンロードリンク用）
-├── downloaders/
-│   ├── __init__.py
-│   ├── base.py          # ダウンローダー基底クラス
-│   ├── qobuz.py         # Qobuzダウンローダー
-│   ├── youtube.py       # YouTubeダウンローダー
-│   └── spotify.py       # Spotifyダウンローダー
-├── ecosystem.config.js  # PM2用プロセス管理設定
-├── pyproject.toml       # プロジェクト設定（uv対応）
-├── requirements.txt     # 依存ライブラリ一覧
-├── README.md            # このファイル
-└── .env.example         # 環境変数テンプレート
-```
+| ファイルサイズ | 提供方法 |
+|--------------|----------|
+| **制限未満** | Discordチャットにzipファイルを直接添付 |
+| **制限超過** | 一時ダウンロードリンクを生成して通知 |
 
-## 動作フロー
+### 外部公開設定 (Cloudflare Tunnel)
 
-1. **リクエスト受付**: ユーザーが `/dl <url>` でURLを送信
-2. **URL判別**: Qobuz/YouTube/Spotify を自動識別
-3. **キュー登録**: 複数リクエストは順番に処理
-4. **ダウンロード実行**:
-   - **Qobuz**: FLAC最高音質、失敗時3回リトライ
-   - **YouTube**: Opus形式、最高品質
-   - **Spotify**: Opus形式（SpotifyはYouTubeからの音源取得を利用）
-5. **メタデータ処理**: ジャケット画像やID3タグを自動埋め込み
-6. **ライブラリ配置**: Navidromeの監視フォルダに自動移動
-7. **ダウンロード提供**: 
-   - 10MB以下: Discord添付ファイルとして直接送信
-   - 10MB以上: 一時ダウンロードリンクを生成（回数・期限制限付き）
-8. **通知**: 完了/失敗をDiscordに通知
+ダウンロードリンク機能を自宅サーバー等から外部に提供するには、**Cloudflare Tunnel** の利用が便利です。BotにはCloudflare Tunnelの管理機能が内蔵されています。
 
-## ダウンロードリンク機能
+以下の3つのモードから選択してください。
 
-ダウンロード完了後、ファイルを取得できる機能を提供します。
+#### 【モードA】Quick Tunnel (推奨・手軽)
+アカウント不要で、Bot起動時に自動的に一時的な公開URLを発行します。URLは起動ごとに変わります。
 
-### 動作モード
+1. [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) をインストールし、パスを通す。
+2. `.env` を設定：
+    ```env
+    CLOUDFLARE_TUNNEL_ENABLED=true
+    CLOUDFLARE_TUNNEL_MODE=quick
+    ```
+3. Botを起動すると、自動的にトンネルが確立されます。
 
-| ファイルサイズ | 動作 |
-|--------------|------|
-| 10MB未満 | Discordに直接zipファイルを添付 |
-| 10MB以上 | 一時ダウンロードリンクを生成 |
+#### 【モードB】Named Tunnel (固定URL)
+固定ドメインで運用したい場合に使用します。Cloudflareアカウントが必要です。
 
-### 一時リンクの制限
+1. `cloudflared` でトンネルを作成し、configファイルを生成（[公式ドキュメント参照](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/)）。
+2. `.env` を設定：
+    ```env
+    CLOUDFLARE_TUNNEL_ENABLED=true
+    CLOUDFLARE_TUNNEL_MODE=named
+    CLOUDFLARE_TUNNEL_NAME=music-bot  # 作成したトンネル名
+    CLOUDFLARE_CONFIG_PATH=~/.cloudflared/config.yml
+    FILE_SERVER_BASE_URL=https://music.your-domain.com
+    ```
 
-- **ダウンロード回数**: 最大3回（設定変更可能）
-- **有効期限**: 24時間（設定変更可能）
-- リンク期限切れまたは回数上限に達すると自動削除
+#### 【モードC】手動運用
+Botとは別に手動でトンネルやリバースプロキシを立ち上げる場合です。公開URLを直接指定します。
 
-### Cloudflare Tunnel の設定（10MB以上のファイル用）
+1. `.env` を設定：
+    ```env
+    CLOUDFLARE_TUNNEL_ENABLED=false
+    FILE_SERVER_BASE_URL=https://your-public-url.com
+    ```
 
-10MB以上のファイルをダウンロードリンクで提供するには、ファイルサーバーを外部公開する必要があります。
+---
 
-#### 方法1: 自動Quick Tunnel（推奨・簡単）
+### ⚠️ アップロード機能のセキュリティ警告
 
-Bot起動時に自動でCloudflare Tunnelを開始します。URLは毎回変わりますが、設定が最も簡単です。
+Quick Tunnel等を使用する場合、`POST /upload` エンドポイントが外部に公開される可能性があります。
+
+- **`UPLOAD_TOKEN` は必ず設定してください。** 未設定の場合、**誰でもファイルをアップロードできる状態**になり大変危険です。
+- 強力なランダム文字列を設定し、定期的に変更することを推奨します。
 
 ```env
-# .env に追加
-CLOUDFLARE_TUNNEL_ENABLED=true
-CLOUDFLARE_TUNNEL_MODE=quick
+# .env設定例
+UPLOAD_TOKEN=very_secret_complex_token_here_12345
 ```
 
-cloudflaredをインストール後、Botを起動するだけで自動的にトンネルが開始されます：
+## 設定ガイド (`.env`)
 
-```bash
-# cloudflaredのインストール（Windows）
-winget install cloudflare.cloudflared
-
-# Botを起動（自動でトンネル開始）
-uv run python main.py
-```
-
-#### 方法2: Named Tunnel（固定URL）
-
-毎回同じURLで公開したい場合は、Named Tunnelを使用します。事前設定が必要です：
-
-```bash
-# 1. Cloudflareにログイン（ブラウザが開きます）
-cloudflared tunnel login
-
-# 2. トンネルを作成
-cloudflared tunnel create music-bot
-
-# 3. DNSレコードを追加（your-domain.comの部分は自分のドメイン）
-cloudflared tunnel route dns music-bot music-dl.your-domain.com
-
-# 4. 設定ファイルを作成（~/.cloudflared/config.yml）
-```
-
-`~/.cloudflared/config.yml` の例:
-```yaml
-tunnel: <UUID>
-credentials-file: C:/Users/yourname/.cloudflared/<UUID>.json
-ingress:
-  - hostname: music-dl.your-domain.com
-    service: http://localhost:8080
-  - service: http_status:404
-```
-
-```env
-# .env に追加
-CLOUDFLARE_TUNNEL_ENABLED=true
-CLOUDFLARE_TUNNEL_MODE=named
-CLOUDFLARE_TUNNEL_NAME=music-bot
-CLOUDFLARE_CONFIG_PATH=~/.cloudflared/config.yml
-FILE_SERVER_BASE_URL=https://music-dl.your-domain.com
-```
-
-#### 方法3: 手動でトンネルを起動
-
-Bot起動前に別ターミナルで手動でトンネルを起動する従来の方法です：
-
-```bash
-# Cloudflare Tunnel のインストール（例: Windows）
-winget install cloudflare.cloudflared
-
-# トンネルの起動（一時URL）
-cloudflared tunnel --url http://localhost:8080
-
-# 表示されるURLを FILE_SERVER_BASE_URL に設定
-```
-
-詳細は [Cloudflare Tunnel ドキュメント](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) を参照してください。
-
-### Cloudflare Quick Tunnel でのアップロード
-
-ファイル配信サーバーには `POST /upload` のアップロードAPIがあります。Quick Tunnel で外部公開し、Discordサーバー外からファイルをアップロードできます。
-
-```bash
-# Quick Tunnel 起動（アップロード用）
-cloudflared tunnel --url http://localhost:8080
-
-# アップロード（Bearer トークンを使う場合）
-curl -X POST "https://<your-tunnel>.trycloudflare.com/upload" ^
-  -H "Authorization: Bearer your_upload_token_here" ^
-  -F "file=@C:\\path\\to\\file.zip"
-```
-
-アップロード保護を有効にするには `.env` に `UPLOAD_TOKEN` を設定してください。
-
-## 設定項目の詳細
-
-| 項目 | デフォルト | 説明 |
-|------|----------|------|
-| `DISCORD_TOKEN` | - | Discord Bot トークン（必須） |
-| `QOBUZ_EMAIL` | - | Qobuz ログインメール |
-| `QOBUZ_PASSWORD` | - | Qobuz パスワード |
-| `DOWNLOAD_PATH` | `./downloads` | 一時ダウンロードフォルダ |
-| `LIBRARY_PATH` | `./library` | 最終配置先（Navidromeライブラリ） |
-| `MAX_RETRIES` | `3` | Qobuzダウンロードの最大リトライ回数 |
-| `QUEUE_MAX_SIZE` | `100` | キュー内の最大タスク数 |
-| `FILE_SERVER_PORT` | `8080` | ファイル配信サーバーのポート |
-| `FILE_SERVER_BASE_URL` | - | 外部公開URL（Cloudflare Tunnel等） |
-| `DOWNLOAD_SIZE_THRESHOLD` | `10485760` | リンク生成の閾値（バイト、デフォルト10MB） |
-| `DOWNLOAD_LINK_MAX_COUNT` | `3` | ダウンロードリンクの最大回数 |
-| `DOWNLOAD_LINK_EXPIRE_HOURS` | `24` | ダウンロードリンクの有効期限（時間） |
-| `UPLOAD_PATH` | `./uploads` | アップロード先フォルダ |
-| `UPLOAD_MAX_SIZE` | `1073741824` | 最大アップロードサイズ（バイト） |
-| `UPLOAD_TOKEN` | - | アップロード保護トークン（未設定なら無制限） |
-| `CLOUDFLARE_TUNNEL_ENABLED` | `false` | Cloudflare Tunnelの自動起動 |
-| `CLOUDFLARE_TUNNEL_MODE` | `quick` | トンネルモード（`quick`または`named`） |
-| `CLOUDFLARE_TUNNEL_NAME` | - | Named Tunnel使用時のトンネル名 |
-| `CLOUDFLARE_CONFIG_PATH` | - | cloudflared設定ファイルのパス |
-| `CLOUDFLARED_PATH` | - | cloudflaredの実行ファイルパス |
+| カテゴリ | 変数名 | デフォルト | 説明 |
+|:---:|---|---|---|
+| **基本** | `DISCORD_TOKEN` | - | **必須**: Botトークン |
+| | `LIBRARY_PATH` | `./library` | Navidrome管理下の保存先 |
+| | `DOWNLOAD_PATH` | `./downloads` | 一時保存フォルダ |
+| **Qobuz** | `QOBUZ_EMAIL` | - | ログインメールアドレス |
+| | `QOBUZ_PASSWORD` | - | ログインパスワード |
+| **制限** | `MAX_RETRIES` | `3` | ダウンロード失敗時の再試行回数 |
+| | `QUEUE_MAX_SIZE` | `100` | キューの最大タスク保持数 |
+| **配信** | `DOWNLOAD_SIZE_THRESHOLD` | `10485760` | リンク生成に切り替えるサイズ閾値(Byte) <br>※デフォルト約10MB |
+| | `DOWNLOAD_LINK_EXPIRE_HOURS` | `24` | リンクの有効期限(時間) |
+| | `DOWNLOAD_LINK_MAX_COUNT` | `3` | リンクからの最大ダウンロード回数 |
+| **公開** | `CLOUDFLARE_TUNNEL_ENABLED` | `false` | Cloudflare Tunnelの自動管理有効化 |
+| | `UPLOAD_TOKEN` | - | **重要**: アップロード認証用トークン |
 
 ## トラブルシューティング
 
-### Bot が起動しない
+**Q. Botが起動しない**
+- `.env` の `DISCORD_TOKEN` が正しいか確認してください。
+- 必要なライブラリがインストールされているか (`uv sync`) 確認してください。
 
-**エラー: `DISCORD_TOKEN が設定されていない`**
-- `.env` ファイルが存在し、`DISCORD_TOKEN` が正しく設定されているか確認してください
+**Q. ダウンロードに失敗する (YouTube/Spotify)**
+- `yt-dlp` は頻繁に更新が必要です。エラーが続く場合は更新を試してください：
+  ```bash
+  uv run pip install --upgrade yt-dlp spotdl
+  ```
+- `ffmpeg` がインストールされていない、またはPATHが通っていない可能性があります。
 
-**エラー: `Qobuz認証情報が不完全`**
-- Qobuzを使用する場合、`QOBUZ_EMAIL` と `QOBUZ_PASSWORD` を設定してください
+**Q. 曲がLibraryに移動されない**
+- `LIBRARY_PATH` のパス指定が正しいか（特にWindowsのドライブレターや区切り文字）確認してください。
+- Botを実行しているユーザーに、そのフォルダへの書き込み権限があるか確認してください。
 
-### ダウンロードが失敗する
+## 開発者向け
 
-**YouTube:**
-- `yt-dlp` が最新版にアップデートされているか確認: `uv pip install --upgrade yt-dlp`
-- URLが正しいか確認
-- `node` がインストール済みで PATH が通っているか確認: `node --version`
-
-**Spotify:**
-- `spotdl` が最新版か確認: `uv pip install --upgrade spotdl`
-- Spotifyアカウント情報が正しいか確認
-
-**Qobuz:**
-- アカウント情報（メール/パスワード）が正しいか確認
-- 曲が配信停止されていないか確認
-
-### ファイルがLibraryに移動されない
-
-- `LIBRARY_PATH` が正しく設定されているか確認
-- フォルダのアクセス権限があるか確認
-- ディスク容量が充分か確認
-
-## 開発
-
-### 開発用の依存関係をインストール
+コードの修正や機能追加を行う場合：
 
 ```bash
+# 開発用ツールのインストール
 uv sync --all-extras
-```
 
-### コード整形・Lint
-
-```bash
-# Black で整形
+# コード整形 (Black)
 uv run black .
 
-# isort で import をソート
+# インポート順序整理 (isort)
 uv run isort .
 
-# flake8 で Lint
+# 静的解析 (Flake8)
 uv run flake8 .
 ```
 
-## ライセンス
+## ディレクトリ構成
 
-MIT License
+```
+MusicDownloaderBot/
+├── main.py              # アプリケーションのエントリーポイント
+├── bot.py               # Discord Bot イベントハンドラ
+├── config.py            # 設定値の読み込み・管理
+├── queue_manager.py     # ダウンロードキューの制御
+├── url_parser.py        # URL解析と振り分け
+├── metadata_fetcher.py  # メタデータ取得・加工処理
+├── file_server.py       # ダウンロードリンク提供用HTTPサーバー
+├── downloaders/         # 各サービスのダウンロードロジック
+│   ├── qobuz.py
+│   ├── youtube.py
+│   └── spotify.py
+└── ecosystem.config.js  # PM2設定ファイル
+```
 
 ## 免責事項
 
-本ツールは学習および研究目的で作成されています。
+本ツールは技術検証および私的利用を目的として開発されています。
 
-- **利用規約の遵守**: 各配信サービス（Qobuz, YouTube, Spotify等）の利用規約に従って使用してください。本ツールの使用によって生じたアカウントの停止、制限等について、制作者は一切の責任を負いません。
-- **著作権について**: 本ツールを使用してダウンロードしたコンテンツは、個人利用の範囲に留めてください。著作権法に抵触するような利用（無断転載、再配布等）は固く禁じられています。
-- **Navidrome**: Navidromeは[AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html)ライセンスです。
-
-## サポート
-
-問題が発生した場合は、以下を確認してください：
-
-1. `.env` ファイルに正しい情報（トークン、パスワード等）が設定されているか
-2. `ffmpeg` がシステムにインストールされ、パスが通っているか
-3. ネットワーク接続に問題がないか
-4. DiscordサーバーでBotに適切な権限（スラッシュコマンドの利用等）が与えられているか
-5. Qobuzをご利用の場合は、アカウントが有効なサブスクリプションを持っているか
-
+- 本ツールを利用して著作権法に違反する行為（権利者の許可なきアップロード、配布、販売など）を行わないでください。
+- 各配信サービスの利用規約を遵守してください。アカウントの停止等の不利益について、開発者は一切の責任を負いません。
