@@ -8,6 +8,7 @@ import sys
 from config import Config
 from bot import get_bot
 from file_server import get_file_server
+from tunnel_manager import get_tunnel_manager
 
 # ログ設定
 logging.basicConfig(
@@ -23,10 +24,54 @@ async def start_bot() -> None:
     """Botとファイルサーバーを起動"""
     bot = get_bot()
     file_server = get_file_server()
+    tunnel_manager = get_tunnel_manager()
     
     server_started = False
-    # ファイルサーバーを起動
-    if Config.FILE_SERVER_BASE_URL:
+    tunnel_started = False
+    base_url = Config.FILE_SERVER_BASE_URL
+    
+    # Cloudflare Tunnelが有効な場合
+    if Config.CLOUDFLARE_TUNNEL_ENABLED:
+        # ファイルサーバーを先に起動
+        try:
+            await file_server.start()
+            server_started = True
+            logger.info(f"ファイルサーバー起動: port {Config.FILE_SERVER_PORT}")
+        except Exception as e:
+            logger.error(f"ファイルサーバーの起動に失敗しました: {e}")
+        
+        if server_started:
+            # トンネルを開始
+            try:
+                if Config.CLOUDFLARE_TUNNEL_MODE == "named":
+                    success = await tunnel_manager.start_named_tunnel()
+                    if success:
+                        tunnel_started = True
+                        logger.info("Named Tunnelを開始しました")
+                    else:
+                        await file_server.stop()
+                        server_started = False
+                else:
+                    public_url = await tunnel_manager.start_quick_tunnel()
+                    if public_url:
+                        tunnel_started = True
+                        base_url = public_url
+
+                        logger.info(f"Quick Tunnel公開URL: {public_url}")
+                    else:
+                        await file_server.stop()
+                        server_started = False
+            except Exception as e:
+                logger.error(f"トンネルの開始に失敗しました: {e}")
+                if server_started:
+                    try:
+                        await file_server.stop()
+                    except Exception as stop_error:
+                        logger.error(f"ファイルサーバー停止中にエラー: {stop_error}")
+                    server_started = False
+    
+    # トンネルなしの場合（従来の動作）
+    elif Config.FILE_SERVER_BASE_URL:
         try:
             await file_server.start()
             server_started = True
@@ -35,12 +80,19 @@ async def start_bot() -> None:
         except Exception as e:
             logger.error(f"ファイルサーバーの起動に失敗しました: {e}")
     else:
-        logger.warning("FILE_SERVER_BASE_URLが未設定のため、ファイルサーバーは起動しません")
+        logger.warning("FILE_SERVER_BASE_URLが未設定かつトンネルも無効のため、ファイルサーバーは起動しません")
         logger.warning("10MB以上のファイルはダウンロードリンクを生成できません")
     
     try:
         await bot.start(Config.DISCORD_TOKEN)
     finally:
+        # トンネルのクリーンアップ
+        if tunnel_started:
+            try:
+                await tunnel_manager.stop()
+            except Exception as e:
+                logger.error(f"トンネルの停止中にエラーが発生しました: {e}")
+        
         # ファイルサーバーのクリーンアップ
         if server_started:
             try:

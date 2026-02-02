@@ -49,6 +49,18 @@ class Config:
     DOWNLOAD_SIZE_THRESHOLD: int = int(os.getenv("DOWNLOAD_SIZE_THRESHOLD", "10485760"))  # 10MB
     DOWNLOAD_LINK_MAX_COUNT: int = int(os.getenv("DOWNLOAD_LINK_MAX_COUNT", "3"))
     DOWNLOAD_LINK_EXPIRE_HOURS: int = int(os.getenv("DOWNLOAD_LINK_EXPIRE_HOURS", "24"))
+
+    # アップロード設定
+    UPLOAD_PATH: Path = Path(os.getenv("UPLOAD_PATH", "./uploads"))
+    UPLOAD_MAX_SIZE: int = int(os.getenv("UPLOAD_MAX_SIZE", "1073741824"))  # 1GB
+    UPLOAD_TOKEN: str = os.getenv("UPLOAD_TOKEN", "")
+
+    # Cloudflare Tunnel設定
+    CLOUDFLARE_TUNNEL_ENABLED: bool = os.getenv("CLOUDFLARE_TUNNEL_ENABLED", "").lower() in ("true", "1", "yes")
+    CLOUDFLARE_TUNNEL_MODE: str = os.getenv("CLOUDFLARE_TUNNEL_MODE", "quick")  # quick or named
+    CLOUDFLARE_TUNNEL_NAME: str = os.getenv("CLOUDFLARE_TUNNEL_NAME", "")
+    CLOUDFLARE_CONFIG_PATH: str = os.getenv("CLOUDFLARE_CONFIG_PATH", "")
+    CLOUDFLARED_PATH: str = os.getenv("CLOUDFLARED_PATH", "")
     
     @classmethod
     def validate(cls) -> list[str]:
@@ -68,3 +80,4 @@ class Config:
         """必要なディレクトリを作成"""
         cls.DOWNLOAD_PATH.mkdir(parents=True, exist_ok=True)
         cls.LIBRARY_PATH.mkdir(parents=True, exist_ok=True)
+        cls.UPLOAD_PATH.mkdir(parents=True, exist_ok=True)

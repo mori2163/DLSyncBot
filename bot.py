@@ -16,7 +16,7 @@ from queue_manager import QueueManager, DownloadTask, TaskStatus
 from url_parser import URLParser, ServiceType
 from metadata_fetcher import MetadataFetcher, MediaMetadata
 from archive_utils import create_zip_archive, format_file_size
-from file_server import get_file_server
+from file_server import DownloadToken, get_file_server
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +192,9 @@ class MusicDownloaderBot(commands.Bot):
         self.tree.add_command(dl_command)
         self.tree.add_command(queue_command)
         
+        # ダウンロード回数更新用のコールバックを登録
+        get_file_server().set_download_callback(self._on_download_link_used)
+        
         # キューワーカーを開始
         self.queue_manager.set_progress_callback(self._on_task_progress)
         await self.queue_manager.start_worker()
@@ -235,6 +238,57 @@ class MusicDownloaderBot(commands.Bot):
             pass
         except discord.HTTPException:
             pass
+
+    async def _on_download_link_used(self, token: DownloadToken) -> None:
+        """ダウンロードリンク使用後に残り回数を更新"""
+        if token.channel_id is None or token.message_id is None:
+            return
+
+        channel = self.get_channel(token.channel_id)
+        if not channel:
+            try:
+                channel = await self.fetch_channel(token.channel_id)
+            except (discord.NotFound, discord.Forbidden):
+                return
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            return
+
+        try:
+            message = await channel.fetch_message(token.message_id)
+        except discord.NotFound:
+            return
+        except discord.HTTPException:
+            return
+
+        if not message.embeds:
+            return
+
+        embed = message.embeds[0]
+        updated = False
+        for index, field in enumerate(embed.fields):
+            if field.name == "📦 ダウンロード":
+                value_lines = field.value.splitlines()
+                new_lines = []
+                for line in value_lines:
+                    if line.startswith("残り回数:"):
+                        new_lines.append(f"残り回数: **{token.remaining_downloads}回**")
+                        updated = True
+                    else:
+                        new_lines.append(line)
+                if updated:
+                    embed.set_field_at(
+                        index,
+                        name=field.name,
+                        value="\n".join(new_lines),
+                        inline=field.inline,
+                    )
+                break
+
+        if updated:
+            try:
+                await message.edit(embed=embed)
+            except discord.HTTPException:
+                pass
     
     async def _on_task_progress(self, task: DownloadTask) -> None:
         """タスク進捗通知"""
@@ -316,6 +370,7 @@ class MusicDownloaderBot(commands.Bot):
             # ダウンロードファイルの準備
             file_attachment = None
             download_view = None
+            token: Optional[DownloadToken] = None
             zip_to_cleanup: Optional[Path] = None
             
             try:
@@ -411,8 +466,14 @@ class MusicDownloaderBot(commands.Bot):
                 if download_view:
                     send_kwargs["view"] = download_view
                 
-                await channel.send(**send_kwargs)
+                sent_message = await channel.send(**send_kwargs)
                 logger.info("完了通知メッセージ送信成功")
+                
+                if download_view and token:
+                    token.channel_id = channel.id
+                    token.message_id = sent_message.id
+                    if token.download_count > 0:
+                        await self._on_download_link_used(token)
             except Exception as e:
                 # 送信エラー時の処理
                 logger.exception(f"通知送信エラー: {e}")

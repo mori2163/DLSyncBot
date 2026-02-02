@@ -227,6 +227,66 @@ MusicDownloaderBot/
 
 10MB以上のファイルをダウンロードリンクで提供するには、ファイルサーバーを外部公開する必要があります。
 
+#### 方法1: 自動Quick Tunnel（推奨・簡単）
+
+Bot起動時に自動でCloudflare Tunnelを開始します。URLは毎回変わりますが、設定が最も簡単です。
+
+```env
+# .env に追加
+CLOUDFLARE_TUNNEL_ENABLED=true
+CLOUDFLARE_TUNNEL_MODE=quick
+```
+
+cloudflaredをインストール後、Botを起動するだけで自動的にトンネルが開始されます：
+
+```bash
+# cloudflaredのインストール（Windows）
+winget install cloudflare.cloudflared
+
+# Botを起動（自動でトンネル開始）
+uv run python main.py
+```
+
+#### 方法2: Named Tunnel（固定URL）
+
+毎回同じURLで公開したい場合は、Named Tunnelを使用します。事前設定が必要です：
+
+```bash
+# 1. Cloudflareにログイン（ブラウザが開きます）
+cloudflared tunnel login
+
+# 2. トンネルを作成
+cloudflared tunnel create music-bot
+
+# 3. DNSレコードを追加（your-domain.comの部分は自分のドメイン）
+cloudflared tunnel route dns music-bot music-dl.your-domain.com
+
+# 4. 設定ファイルを作成（~/.cloudflared/config.yml）
+```
+
+`~/.cloudflared/config.yml` の例:
+```yaml
+tunnel: <UUID>
+credentials-file: C:/Users/yourname/.cloudflared/<UUID>.json
+ingress:
+  - hostname: music-dl.your-domain.com
+    service: http://localhost:8080
+  - service: http_status:404
+```
+
+```env
+# .env に追加
+CLOUDFLARE_TUNNEL_ENABLED=true
+CLOUDFLARE_TUNNEL_MODE=named
+CLOUDFLARE_TUNNEL_NAME=music-bot
+CLOUDFLARE_CONFIG_PATH=~/.cloudflared/config.yml
+FILE_SERVER_BASE_URL=https://music-dl.your-domain.com
+```
+
+#### 方法3: 手動でトンネルを起動
+
+Bot起動前に別ターミナルで手動でトンネルを起動する従来の方法です：
+
 ```bash
 # Cloudflare Tunnel のインストール（例: Windows）
 winget install cloudflare.cloudflared
@@ -237,7 +297,23 @@ cloudflared tunnel --url http://localhost:8080
 # 表示されるURLを FILE_SERVER_BASE_URL に設定
 ```
 
-永続的なトンネルを設定する場合は [Cloudflare Tunnel ドキュメント](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) を参照してください。
+詳細は [Cloudflare Tunnel ドキュメント](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) を参照してください。
+
+### Cloudflare Quick Tunnel でのアップロード
+
+ファイル配信サーバーには `POST /upload` のアップロードAPIがあります。Quick Tunnel で外部公開し、Discordサーバー外からファイルをアップロードできます。
+
+```bash
+# Quick Tunnel 起動（アップロード用）
+cloudflared tunnel --url http://localhost:8080
+
+# アップロード（Bearer トークンを使う場合）
+curl -X POST "https://<your-tunnel>.trycloudflare.com/upload" ^
+  -H "Authorization: Bearer your_upload_token_here" ^
+  -F "file=@C:\\path\\to\\file.zip"
+```
+
+アップロード保護を有効にするには `.env` に `UPLOAD_TOKEN` を設定してください。
 
 ## 設定項目の詳細
 
@@ -255,6 +331,14 @@ cloudflared tunnel --url http://localhost:8080
 | `DOWNLOAD_SIZE_THRESHOLD` | `10485760` | リンク生成の閾値（バイト、デフォルト10MB） |
 | `DOWNLOAD_LINK_MAX_COUNT` | `3` | ダウンロードリンクの最大回数 |
 | `DOWNLOAD_LINK_EXPIRE_HOURS` | `24` | ダウンロードリンクの有効期限（時間） |
+| `UPLOAD_PATH` | `./uploads` | アップロード先フォルダ |
+| `UPLOAD_MAX_SIZE` | `1073741824` | 最大アップロードサイズ（バイト） |
+| `UPLOAD_TOKEN` | - | アップロード保護トークン（未設定なら無制限） |
+| `CLOUDFLARE_TUNNEL_ENABLED` | `false` | Cloudflare Tunnelの自動起動 |
+| `CLOUDFLARE_TUNNEL_MODE` | `quick` | トンネルモード（`quick`または`named`） |
+| `CLOUDFLARE_TUNNEL_NAME` | - | Named Tunnel使用時のトンネル名 |
+| `CLOUDFLARE_CONFIG_PATH` | - | cloudflared設定ファイルのパス |
+| `CLOUDFLARED_PATH` | - | cloudflaredの実行ファイルパス |
 
 ## トラブルシューティング
 

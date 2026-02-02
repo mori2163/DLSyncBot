@@ -5,12 +5,13 @@
 
 import asyncio
 import logging
+import secrets
 import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from aiohttp import web
 
@@ -29,6 +30,9 @@ class DownloadToken:
     expires_at: datetime = field(default=None)
     max_downloads: int = 3
     download_count: int = 0
+    channel_id: Optional[int] = None
+    message_id: Optional[int] = None
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     
     def __post_init__(self):
         if self.expires_at is None:
@@ -67,6 +71,30 @@ class FileServer:
         self._runner: Optional[web.AppRunner] = None
         self._site: Optional[web.TCPSite] = None
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._download_callback: Optional[Callable[[DownloadToken], Awaitable[None]]] = None
+
+    def set_download_callback(
+        self,
+        callback: Optional[Callable[[DownloadToken], Awaitable[None]]],
+    ) -> None:
+        """ダウンロード後の処理コールバックを設定"""
+        self._download_callback = callback
+
+    def _schedule_download_callback(self, token: DownloadToken) -> None:
+        """ダウンロード後のコールバックを実行"""
+        if not self._download_callback:
+            return
+
+        task = asyncio.create_task(self._download_callback(token))
+
+        def _log_error(done_task: asyncio.Task) -> None:
+            if done_task.cancelled():
+                return
+            error = done_task.exception()
+            if error:
+                logger.error(f"ダウンロード後処理でエラー: {error}")
+
+        task.add_done_callback(_log_error)
     
     def create_download_link(
         self,
@@ -125,6 +153,30 @@ class FileServer:
                 logger.error(f"ファイル削除に失敗しました: {e}")
             return True
         return False
+
+    def _is_upload_authorized(self, request: web.Request) -> bool:
+        """アップロードの認可を確認"""
+        raw_required_token = Config.UPLOAD_TOKEN
+        if not isinstance(raw_required_token, str):
+            # トークンが未設定または文字列以外の場合は認可不要とみなす
+            return True
+
+        required_token = raw_required_token.strip()
+        if not required_token:
+            return True
+
+        auth_header = request.headers.get("Authorization", "")
+        token = ""
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+
+        if not token:
+            token = request.headers.get("X-Upload-Token", "").strip()
+
+        if not token:
+            token = request.query.get("token", "").strip()
+
+        return secrets.compare_digest(token, required_token)
     
     async def _handle_download(self, request: web.Request) -> web.StreamResponse:
         """ダウンロードリクエストを処理"""
@@ -138,22 +190,23 @@ class FileServer:
         if not token:
             return web.Response(status=404, text="Download link not found")
         
-        if token.is_expired:
-            self.invalidate_token(token_id)
-            return web.Response(status=410, text="Download link has expired")
-        
-        if token.is_exhausted:
-            self.invalidate_token(token_id)
-            return web.Response(status=410, text="Download limit reached")
-        
-        if not token.file_path.exists():
-            self.invalidate_token(token_id)
-            return web.Response(status=404, text="File not found")
-        
-        # ダウンロード回数をインクリメント
-        token.download_count += 1
-        remaining = token.remaining_downloads
-        
+        async with token.lock:
+            if token.is_expired:
+                self.invalidate_token(token_id)
+                return web.Response(status=410, text="Download link has expired")
+            if token.is_exhausted:
+                self.invalidate_token(token_id)
+                return web.Response(status=410, text="Download limit reached")
+            if not token.file_path.exists():
+                self.invalidate_token(token_id)
+                return web.Response(status=404, text="File not found")
+
+            # ダウンロード回数をインクリメント
+            token.download_count += 1
+            remaining = token.remaining_downloads
+
+            self._schedule_download_callback(token)
+
         logger.info(
             f"ダウンロード: {token.file_name} "
             f"(回数: {token.download_count}/{token.max_downloads})"
@@ -178,6 +231,79 @@ class FileServer:
                 "Content-Disposition": f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{encoded_filename}',
                 "X-Downloads-Remaining": str(remaining),
             },
+        )
+
+    async def _handle_upload(self, request: web.Request) -> web.Response:
+        """アップロードリクエストを処理"""
+        if not self._is_upload_authorized(request):
+            return web.Response(status=401, text="Unauthorized")
+
+        if not request.content_type.startswith("multipart/"):
+            return web.Response(status=415, text="multipart/form-data required")
+
+        if (
+            request.content_length is not None
+            and request.content_length > Config.UPLOAD_MAX_SIZE
+        ):
+            raise web.HTTPRequestEntityTooLarge(
+                max_size=Config.UPLOAD_MAX_SIZE,
+                actual_size=request.content_length,
+            )
+
+        reader = await request.multipart()
+        field = None
+        while True:
+            part = await reader.next()
+            if part is None:
+                break
+            if part.name == "file":
+                field = part
+                break
+
+        if field is None or not field.filename:
+            return web.Response(status=400, text="File is required")
+
+        original_name = Path(field.filename).name or "upload"
+        if (
+            not original_name
+            or original_name in (".", "..")
+            or any(sep in original_name for sep in ("/", "\\"))
+            or "\x00" in original_name
+            or ":" in original_name
+        ):
+            return web.Response(status=400, text="Invalid file name")
+        stored_name = f"{uuid.uuid4()}_{original_name}"
+        target_path = Config.UPLOAD_PATH / stored_name
+
+        size = 0
+        success = False
+        try:
+            with target_path.open("wb") as file_handle:
+                while True:
+                    chunk = await field.read_chunk()
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > Config.UPLOAD_MAX_SIZE:
+                        raise web.HTTPRequestEntityTooLarge(
+                            max_size=Config.UPLOAD_MAX_SIZE,
+                            actual_size=size,
+                        )
+                    file_handle.write(chunk)
+            success = True
+        finally:
+            if not success and target_path.exists():
+                target_path.unlink()
+
+        logger.info(f"アップロード完了: {original_name} -> {target_path} ({size} bytes)")
+
+        return web.json_response(
+            {
+                "uploaded": True,
+                "file_name": original_name,
+                "stored_name": stored_name,
+                "size": size,
+            }
         )
     
     async def _handle_info(self, request: web.Request) -> web.Response:
@@ -242,9 +368,10 @@ class FileServer:
             logger.warning("ファイルサーバーは既に起動しています")
             return
         
-        self._app = web.Application()
+        self._app = web.Application(client_max_size=Config.UPLOAD_MAX_SIZE)
         self._app.router.add_get("/download/{token}", self._handle_download)
         self._app.router.add_get("/info/{token}", self._handle_info)
+        self._app.router.add_post("/upload", self._handle_upload)
         
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
