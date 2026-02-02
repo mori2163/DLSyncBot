@@ -199,9 +199,13 @@ class TunnelManager:
             await asyncio.sleep(2)
             if self._process.returncode is not None:
                 logger.error("cloudflaredが予期せず終了しました")
-                await self.stop()
-                return False
-
+                if self._process.returncode is not None:
+                    logger.error("cloudflaredが予期せず終了しました")
+                    try:
+                        await self.stop()
+                    except Exception as stop_error:
+                        logger.error(f"トンネル停止中にエラーが発生しました: {stop_error}")
+                    return False
             logger.info("Named Tunnelを開始しました")
             return True
 

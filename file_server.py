@@ -393,6 +393,14 @@ class FileServer:
         if not self.is_running:
             return
 
+        # バックグラウンドタスクをキャンセル
+        if self._background_tasks:
+            tasks = list(self._background_tasks)
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self._background_tasks.clear()
+
         if self._cleanup_task:
             self._cleanup_task.cancel()
             try:
